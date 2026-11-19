@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comparateur de plans PDF</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--bd:#d9dce1;--tx:#1f2430;--mut:#6b7280;--red:#e5192b;--green:#16a34a;--blue:#2563eb}
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column}
+header{background:var(--panel);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{font-size:16px;margin:0 8px 0 0}
+label.f{display:flex;flex-direction:column;font-size:11px;color:var(--mut);gap:2px}
+input[type=number]{width:70px}input[type=file]{max-width:200px}
+button{background:var(--blue);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
+button.sec{background:#fff;color:var(--tx);border:1px solid var(--bd)}button.on{background:var(--tx);color:#fff}
+button:disabled{opacity:.5;cursor:wait}
+main{flex:1;display:flex;min-height:0}
+#stage{flex:1;display:flex;flex-direction:column;min-width:0}
+#bar{padding:6px 10px;display:flex;gap:8px;align-items:center;background:var(--panel);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+#views{flex:1;display:flex;gap:2px;min-height:0;background:#888}
+.vp{flex:1;position:relative;overflow:hidden;background:#fff;cursor:grab;min-width:0}
+.vp.drag{cursor:grabbing}
+.pane{position:absolute;inset:0;overflow:hidden}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+.world>*{position:absolute;left:0;top:0;pointer-events:none;user-select:none;-webkit-user-drag:none}
+.bshift{position:absolute;left:0;top:0}
+#handle{position:absolute;top:0;bottom:0;width:4px;background:var(--blue);cursor:ew-resize;z-index:5;display:none}
+#handle::after{content:"⇆";position:absolute;top:50%;left:-10px;width:24px;height:24px;margin-top:-12px;background:var(--blue);color:#fff;border-radius:50%;text-align:center;line-height:24px}
+.tag{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.65);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;z-index:4}
+aside{width:340px;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column}
+aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(--bd)}
+#list{overflow:auto;flex:1}
+.z{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer}.z:hover,.z.sel{background:#eef3ff}
+.z b{color:var(--blue)}.r{color:var(--red)}.g{color:var(--green)}.t{font-size:12px;color:var(--mut);margin-top:3px;word-break:break-word}
+.legend{display:flex;gap:12px;font-size:12px;align-items:center}.sw{width:12px;height:12px;display:inline-block;border-radius:2px;vertical-align:-2px;margin-right:3px}
+#msg{padding:30px;color:var(--mut)}.box{position:absolute;border:2px solid var(--blue);background:rgba(37,99,235,.08);pointer-events:none}
+</style></head><body>
+<header>
+ <h1>Comparateur de plans PDF</h1>
+ <label class="f">A — ancien<input type="file" id="fa" accept="application/pdf"></label>
+ <label class="f">B — nouveau<input type="file" id="fb" accept="application/pdf"></label>
+ <label class="f">Tolérance (mm)<input type="number" id="tol" value="2" min="0.1" step="0.1"></label>
+ <label class="f">Regroupement (mm)<input type="number" id="clu" value="15" min="1" step="1"></label>
+ <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="al"> Recalage auto</label>
+ <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="ct" checked> Comparer les textes</label>
+ <button id="go">Comparer</button>
+</header>
+<main>
+ <div id="stage">
+  <div id="bar">
+   <button class="sec on" data-m="overlay">Superposition</button>
+   <button class="sec" data-m="side">Côte à côte</button>
+   <button class="sec" data-m="slider">Curseur</button>
+   <span style="width:10px"></span>
+   <select id="pg" class="sec"></select>
+   <button class="sec" id="fit">Ajuster</button>
+   <span class="legend"><span><i class="sw" style="background:var(--red)"></i>Supprimé (A)</span><span><i class="sw" style="background:var(--green)"></i>Ajouté (B)</span></span>
+   <span style="flex:1"></span>
+   <button class="sec" id="xpdf" disabled>Export PDF</button><button class="sec" id="xcsv" disabled>Export CSV</button>
+  </div>
+  <div id="views"><div id="msg">Choisissez deux PDF puis cliquez sur « Comparer ».</div></div>
+ </div>
+ <aside><h2 id="sum">Différences</h2><div id="list"></div></aside>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+let R=null,page=0,mode='overlay',view={k:1,x:0,y:0},sliderX=.5,sel=null,vps=[];
+const url=(n,name)=>`/api/result/${R.id}/p/${n}/${name}`;
+const el=(t,c,p)=>{const e=document.createElement(t);if(c)e.className=c;if(p)p.append(e);return e};
+const img=(src,style)=>{const i=new Image();i.src=src;i.draggable=false;if(style)i.style.cssText=style;return i};
+
+$('#go').onclick=async()=>{
+  if(!$('#fa').files[0]||!$('#fb').files[0]){alert('Sélectionnez les deux PDF.');return}
+  const fd=new FormData();fd.append('a',$('#fa').files[0]);fd.append('b',$('#fb').files[0]);
+  fd.append('tol_mm',$('#tol').value);fd.append('cluster_mm',$('#clu').value);
+  fd.append('align',$('#al').checked);fd.append('compare_text',$('#ct').checked);
+  $('#go').disabled=true;$('#go').textContent='Analyse…';$('#views').innerHTML='<div id="msg">Analyse en cours…</div>';
+  try{const r=await fetch('/api/compare',{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json()).detail||r.status);R=await r.json()}
+  catch(e){$('#views').innerHTML='<div id="msg">Erreur : '+e.message+'</div>';return}
+  finally{$('#go').disabled=false;$('#go').textContent='Comparer'}
+  $('#pg').innerHTML=R.pages.map((p,i)=>`<option value="${i}">Page ${p.page}${p.identical?' (identique)':''}</option>`).join('');
+  $('#xpdf').disabled=$('#xcsv').disabled=false;
+  page=0;sel=null;buildView(true);
+};
+$('#pg').onchange=e=>{page=+e.target.value;sel=null;buildView(true)};
+$('#xpdf').onclick=()=>location.href=`/api/result/${R.id}/export.pdf`;
+$('#xcsv').onclick=()=>location.href=`/api/result/${R.id}/export.csv`;
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{mode=b.dataset.m;document.querySelectorAll('[data-m]').forEach(x=>x.classList.toggle('on',x===b));if(R)buildView(false)});
+$('#fit').onclick=()=>fit();
+
+function mkWorld(kind,P){ // kind 'a' | 'b' | 'ov'
+  const w=el('div','world');w.style.width=P.width+'px';w.style.height=P.height+'px';
+  const S=P.shift;
+  if(kind==='a'){w.append(img(url(page,'a.png'),`width:${P.width}px;height:${P.height}px`),img(url(page,'removed.svg')),img(url(page,'text_a.svg')))}
+  else if(kind==='b'){w.append(img(url(page,'b.png'),`width:${P.width}px;height:${P.height}px`),img(url(page,'added.svg')),img(url(page,'text_b.svg')))}
+  else{ // superposition : A estompé + écarts, repère de A (B décalé de -shift)
+    w.append(img(url(page,'a.png'),`width:${P.width}px;height:${P.height}px;opacity:.28;filter:grayscale(1)`),img(url(page,'removed.svg')),img(url(page,'text_a.svg')));
+    const g=el('div','bshift',w);g.style.transform=`translate(${-S[0]}px,${-S[1]}px)`;
+    const a=img(url(page,'added.svg'));a.style.position='absolute';const t=img(url(page,'text_b.svg'));t.style.position='absolute';g.append(a,t);}
+  const boxes=el('div','boxes',w);boxes.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
+  w._boxes=boxes;return w;
+}
+function buildView(refit){
+  const P=R.pages[page],V=$('#views');V.innerHTML='';vps=[];
+  const mk=(worlds,tag)=>{const vp=el('div','vp',V);worlds.forEach(([w,clip])=>{const pn=el('div','pane',vp);pn.append(w);pn._w=w;pn._clip=clip});if(tag)el('div','tag',vp).textContent=tag;vp._panes=[...vp.querySelectorAll('.pane')];bind(vp);vps.push(vp);return vp};
+  if(mode==='overlay')mk([[mkWorld('ov',P)]]);
+  else if(mode==='side'){mk([[mkWorld('a',P)]],'A — '+R.name_a);mk([[mkWorld('b',P)]],'B — '+R.name_b)}
+  else{const vp=mk([[mkWorld('a',P)],[mkWorld('b',P),true]],null);const h=el('div',null,vp);h.id='handle';h.style.display='block';
+    el('div','tag',vp).textContent='A ◀ ▶ B';
+    h.onpointerdown=e=>{e.stopPropagation();h.setPointerCapture(e.pointerId);h.onpointermove=ev=>{sliderX=Math.min(1,Math.max(0,(ev.clientX-vp.getBoundingClientRect().left)/vp.clientWidth));apply()}};
+    h.onpointerup=()=>h.onpointermove=null}
+  renderList();requestAnimationFrame(()=>{refit?fit():apply();drawBoxes()});
+}
+function apply(){
+  vps.forEach(vp=>{vp._panes.forEach(pn=>{pn._w.style.transform=`translate(${view.x}px,${view.y}px) scale(${view.k})`;
+    if(pn._clip)pn.style.clipPath=`inset(0 0 0 ${sliderX*vp.clientWidth}px)`});
+    const h=vp.querySelector('#handle');if(h)h.style.left=(sliderX*vp.clientWidth-2)+'px'});
+}
+function fit(){const P=R.pages[page],vp=vps[0];view.k=Math.min(vp.clientWidth/P.width,vp.clientHeight/P.height)*.98;view.x=(vp.clientWidth-P.width*view.k)/2;view.y=(vp.clientHeight-P.height*view.k)/2;apply()}
+function bind(vp){
+  vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+    const f=Math.exp(-e.deltaY*.0015),nk=Math.min(60,Math.max(.02,view.k*f)),q=nk/view.k;view.x=mx-(mx-view.x)*q;view.y=my-(my-view.y)*q;view.k=nk;apply()},{passive:false});
+  vp.addEventListener('pointerdown',e=>{if(e.target.id==='handle')return;vp.setPointerCapture(e.pointerId);vp.classList.add('drag');let lx=e.clientX,ly=e.clientY;
+    vp.onpointermove=ev=>{view.x+=ev.clientX-lx;view.y+=ev.clientY-ly;lx=ev.clientX;ly=ev.clientY;apply()};});
+  vp.addEventListener('pointerup',()=>{vp.onpointermove=null;vp.classList.remove('drag')});
+}
+function drawBoxes(){
+  document.querySelectorAll('.boxes').forEach(b=>b.innerHTML='');
+  if(!sel)return;const z=R.pages[page].zones.find(z=>z.id===sel);if(!z)return;
+  document.querySelectorAll('.boxes').forEach(b=>{const d=el('div','box',b),p=14;d.style.cssText+=`left:${z.bbox[0]-p}px;top:${z.bbox[1]-p}px;width:${z.bbox[2]-z.bbox[0]+2*p}px;height:${z.bbox[3]-z.bbox[1]+2*p}px;border-width:${2/view.k}px`});
+}
+function zoomTo(z){const vp=vps[0],[x0,y0,x1,y1]=z.bbox,p=40,w=x1-x0+2*p,h=y1-y0+2*p;
+  view.k=Math.min(vp.clientWidth/w,vp.clientHeight/h,12);view.x=vp.clientWidth/2-((x0+x1)/2)*view.k;view.y=vp.clientHeight/2-((y0+y1)/2)*view.k;apply()}
+function renderList(){
+  const P=R.pages[page],L=$('#list');L.innerHTML='';
+  $('#sum').textContent=`Page ${P.page} : ${P.zones.length} zone(s) — −${P.n_removed} / +${P.n_added} traits, ${P.texts.length} texte(s)`;
+  if(R.pages_a!==R.pages_b){const d=el('div','z',L);d.textContent=`⚠ Nombre de pages différent (A : ${R.pages_a}, B : ${R.pages_b}). Seules les pages communes sont comparées.`}
+  if(P.identical){const d=el('div','z',L);d.textContent='Aucune différence à cette tolérance.'}
+  P.zones.forEach(z=>{
+    const d=el('div','z'+(z.id===sel?' sel':''),L),tx=P.texts.filter(t=>{const b=t.box_b||t.box_a;return b&&b[0]>=z.bbox[0]-20&&b[2]<=z.bbox[2]+20&&b[1]>=z.bbox[1]-20&&b[3]<=z.bbox[3]+20});
+    d.innerHTML=`<b>Zone ${z.id}</b> &nbsp;<span class="r">−${z.removed}</span> <span class="g">+${z.added}</span> traits · ${z.text_mod+z.text_add+z.text_rem} texte(s)`;
+    tx.slice(0,4).forEach(t=>{const s=el('div','t',d);s.textContent=t.kind==='modified'?`« ${t.old} » → « ${t.new} »`:t.kind==='added'?`+ « ${t.new} »`:`− « ${t.old} »`});
+    if(tx.length>4)el('div','t',d).textContent=`… +${tx.length-4} autres textes`;
+    d.onclick=()=>{sel=z.id;renderList();zoomTo(z);drawBoxes()};
+  });
+}
+window.addEventListener('resize',()=>R&&apply());
+</script></body></html>
