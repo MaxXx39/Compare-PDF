@@ -183,8 +183,8 @@ function compare(A, B, p) {
 /* ------------------------------------------------------------------ état / UI */
 let docA, docB, R = null, page = 0, mode = "overlay", tool = "pan", view = { k: 1, x: 0, y: 0 }, sliderX = .5, sel = null, ras = null,
   names = ["A", "B"], blinkB = false, blinkT = null, blinkMs = 600, fast = false, recT = 0, cvs = [], pendingText = null;
-const RED = "#e5192b", BLUE = "#0284c7";
-const status = t => { clearInterval(blinkT); $("#views").innerHTML = `<div id="msg">${t}</div>`; };
+const RED = "#ff3b4e", BLUE = "#1e90ff";
+const status = t => { clearInterval(blinkT); cvs = []; $("#views").innerHTML = `<div id="msg"><div class="card">${/^Erreur/.test(t) ? "" : '<div class="spin"></div>'}<p style="color:var(--tx);font-size:14px">${t}</p></div></div>`; };
 const readDoc = async f => pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
 const toast = t => { const e = $("#toast"); e.textContent = t; e.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.opacity = 0, 3000); };
 const resScale = P => Math.min(+$("#res").value || 2, 8000 / Math.max(P.w, P.h));
@@ -313,15 +313,17 @@ function drawNow() {
   if (!R || !ras) return; const P = R.pages[page], dpr = window.devicePixelRatio || 1, z = P.zones.find(z => z.id === sel);
   for (const { vp, c, which, tag } of cvs) {
     const W = vp.clientWidth, H = vp.clientHeight; if (c.width !== Math.round(W*dpr) || c.height !== Math.round(H*dpr)) { c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); c.style.width = W+"px"; c.style.height = H+"px"; }
-    const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
     const T = () => ctx.setTransform(dpr*view.k, 0, 0, dpr*view.k, dpr*view.x, dpr*view.y), opt = { fast, vec: $("#vec").checked };
+    const pageBg = () => { ctx.save(); T(); ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 28*dpr; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, P.w, P.h); ctx.restore(); };
     if (which === "slider") { const cx = sliderX * c.width;
-      ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z, opt); ctx.restore();
-      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); T(); drawLayer(ctx, P, "b", view.k, ras, z, opt); ctx.restore();
+      pageBg(); ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z, opt); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.clearRect(0, 0, c.width, c.height); pageBg(); T(); drawLayer(ctx, P, "b", view.k, ras, z, opt); ctx.restore();
       const h = vp.querySelector("#handle"); if (h) h.style.left = (sliderX*W - 2) + "px"; }
-    else if (which === "blink") { T(); drawLayer(ctx, P, blinkB ? "b" : "a", view.k, ras, z, opt); tag.textContent = blinkB ? "PLAN B (nouveau)" : "PLAN A (ancien)"; tag.style.background = blinkB ? BLUE : RED; }
-    else { T(); drawLayer(ctx, P, which, view.k, ras, z, opt); }
+    else if (which === "blink") { pageBg(); T(); drawLayer(ctx, P, blinkB ? "b" : "a", view.k, ras, z, opt); tag.textContent = blinkB ? "PLAN B (nouveau)" : "PLAN A (ancien)"; tag.style.background = blinkB ? "#1e90ffcc" : "#ff3b4ecc"; }
+    else { pageBg(); T(); drawLayer(ctx, P, which, view.k, ras, z, opt); }
   }
+  $("#zl").textContent = Math.round(view.k * 100) + "%";
 }
 function fit() { const P = R.pages[page], vp = cvs[0].vp; view.k = Math.min(vp.clientWidth/P.w, vp.clientHeight/P.h) * .98; view.x = (vp.clientWidth - P.w*view.k)/2; view.y = (vp.clientHeight - P.h*view.k)/2; draw(); }
 
@@ -371,14 +373,16 @@ const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&g
 const inZone = (t, z, sh) => { const b = t.a || (t.b && [t.b[0]-sh[0], t.b[1]-sh[1], t.b[2]-sh[0], t.b[3]-sh[1]]); return b && b[0] >= z.bbox[0]-20 && b[2] <= z.bbox[2]+20 && b[1] >= z.bbox[1]-20 && b[3] <= z.bbox[3]+20; };
 function renderList() {
   const P = R.pages[page], L = $("#list"); L.innerHTML = "";
-  $("#sum").textContent = `Page ${P.page} : ${P.zones.length} zone(s) — −${P.removed.length/4} / +${P.added.length/4} traits, ${P.texts.length} texte(s)`;
-  const add = html => { const d = document.createElement("div"); d.className = "z"; d.innerHTML = html; L.append(d); return d; };
-  if (R.nA !== R.nB) add(`⚠ Nombre de pages différent (A : ${R.nA}, B : ${R.nB}). Seules les pages communes sont comparées.`);
-  if (P.identical) add("Aucune différence à cette tolérance.");
+  const nr = P.removed.length/4, na = P.added.length/4;
+  $("#sum").textContent = `Page ${P.page} · ${P.zones.length} zone${P.zones.length > 1 ? "s" : ""} modifiée${P.zones.length > 1 ? "s" : ""}`;
+  $("#chips").innerHTML = `<span class="pill r">− ${nr} traits</span><span class="pill b">+ ${na} traits</span><span class="pill t">${P.texts.length} texte${P.texts.length > 1 ? "s" : ""}</span>`;
+  const add = (html, cls = "z") => { const d = document.createElement("div"); d.className = cls; d.innerHTML = html; L.append(d); return d; };
+  if (R.nA !== R.nB) add(`⚠ Nombre de pages différent (A : ${R.nA}, B : ${R.nB}). Seules les pages communes sont comparées.`, "note");
+  if (P.identical) add(`<div class="ok"><svg class="i" style="width:24px;height:24px"><use href="#i-check"/></svg></div><b style="color:var(--tx)">Aucune différence</b><br>à cette tolérance (${R.p.tol} mm).`, "empty");
   P.zones.forEach(z => {
     const tx = P.texts.filter(t => inZone(t, z, P.shift));
-    const d = add(`<b>Zone ${z.id}</b> &nbsp;<span class="r">−${z.removed}</span> <span class="g">+${z.added}</span> traits · ${z.text} texte(s)` +
-      tx.slice(0, 4).map(t => `<div class="t">${t.kind === "modified" ? `« ${esc(t.old)} » → « ${esc(t.nw)} »` : t.kind === "added" ? `+ « ${esc(t.nw)} »` : `− « ${esc(t.old)} »`}</div>`).join("") +
+    const d = add(`<div class="top"><span class="num">${z.id}</span><b>Zone ${z.id}</b><span class="cnt"><span class="r">− ${z.removed}</span><span class="b">+ ${z.added}</span><span style="color:var(--acc)">${z.text} T</span></span></div>` +
+      tx.slice(0, 4).map(t => `<div class="t">${t.kind === "modified" ? `<s>${esc(t.old)}</s> → <u>${esc(t.nw)}</u>` : t.kind === "added" ? `<u>+ ${esc(t.nw)}</u>` : `<s>${esc(t.old)}</s>`}</div>`).join("") +
       (tx.length > 4 ? `<div class="t">… +${tx.length-4} autres textes</div>` : ""));
     if (z.id === sel) d.classList.add("sel");
     d.onclick = () => { sel = z.id; renderList(); zoomTo(z); };
@@ -417,3 +421,34 @@ $("#xpdf").onclick = async () => {
   for (const P of R.pages) { const c = await exportCanvas(P, 1.5); doc.addPage([P.w, P.h], P.w > P.h ? "l" : "p"); doc.addImage(c.toDataURL("image/jpeg", .88), "JPEG", 0, 0, P.w, P.h); }
   doc.save("comparaison.pdf"); $("#xpdf").disabled = false;
 };
+
+/* ------------------------------------------------------------------ ergonomie */
+const slot = { A: null, B: null };
+function setFile(side, f) {
+  if (!f || !/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return toast("Fichier PDF requis.");
+  slot[side] = f; const inp = $(side === "A" ? "#fa" : "#fb"), dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files;
+  $(side === "A" ? "#na" : "#nb").textContent = f.name; $(side === "A" ? "#ca" : "#cb").classList.add("has");
+  if ($("#fa").files[0] && $("#fb").files[0]) $("#go").click(); else toast(`Plan ${side} chargé — choisissez maintenant le plan ${side === "A" ? "B" : "A"}.`);
+}
+["fa", "fb"].forEach(id => $("#" + id).addEventListener("change", e => { const f = e.target.files[0]; if (f && slot[id === "fa" ? "A" : "B"] !== f) setFile(id === "fa" ? "A" : "B", f); }));
+$("#swp").onclick = () => { const a = $("#fa").files[0], b = $("#fb").files[0]; if (!a || !b) return toast("Chargez d'abord les deux plans."); slot.A = slot.B = null; setFile("A", b); slot.B = null; setFile("B", a); };
+document.addEventListener("click", e => { const d = e.target.closest(".drop"); if (d) $(d.dataset.side === "A" ? "#fa" : "#fb").click(); });
+const dz = (el, side) => { el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("drop", "drop-on"); }); el.addEventListener("dragleave", () => el.classList.remove("drop-on"));
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("drop-on"); const fs = [...e.dataTransfer.files]; if (side) setFile(side, fs[0]); else { if (fs[0]) setFile(el.dataset.side, fs[0]); } e.stopPropagation(); }); };
+dz($("#ca"), "A"); dz($("#cb"), "B");
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); const t = e.target.closest(".drop"); const fs = [...e.dataTransfer.files].filter(f => /\.pdf$/i.test(f.name));
+  if (t) return setFile(t.dataset.side, fs[0]);
+  if (fs.length >= 2) { setFile("A", fs[0]); setFile("B", fs[1]); } else if (fs.length === 1) setFile($("#fa").files[0] ? "B" : "A", fs[0]); });
+/* menus déroulants */
+const toggle = (btn, pop) => { $(btn).onclick = e => { e.stopPropagation(); const on = !$(pop).classList.contains("show"); document.querySelectorAll(".pop").forEach(p => p.classList.remove("show")); $(pop).classList.toggle("show", on); }; };
+toggle("#sbtn", "#spop"); toggle("#ebtn", "#epop");
+document.addEventListener("click", e => { if (!e.target.closest(".pop")) document.querySelectorAll(".pop").forEach(p => p.classList.remove("show")); });
+document.querySelectorAll("#epop button").forEach(b => b.addEventListener("click", () => $("#epop").classList.remove("show")));
+/* zoom */
+const zoomC = f => { if (!R || !cvs.length) return; const vp = cvs[0].vp, mx = vp.clientWidth/2, my = vp.clientHeight/2, nk = Math.min(80, Math.max(.02, view.k*f)), q = nk/view.k; view.x = mx-(mx-view.x)*q; view.y = my-(my-view.y)*q; view.k = nk; draw(); };
+$("#zi").onclick = () => zoomC(1.3); $("#zo").onclick = () => zoomC(1/1.3);
+/* raccourcis */
+window.addEventListener("keydown", e => { if (!R || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.ctrlKey && e.key !== "z" || e.metaKey) return;
+  const k = e.key.toLowerCase(), T = { v: "pan", h: "pan", r: "align", c: "cloud", f: "arrow", t: "text" }, M = { 1: "overlay", 2: "slider", 3: "blink", 4: "side" };
+  if (T[k]) setTool(T[k]); else if (M[k]) document.querySelector(`[data-m=${M[k]}]`).click(); else if (k === "0") fit(); else if (k === "z" && e.ctrlKey) $("#undo").click(); else if (k === "+" || k === "=") zoomC(1.3); else if (k === "-") zoomC(1/1.3); });

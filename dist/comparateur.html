@@ -1,81 +1,222 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Comparateur de plans PDF</title>
+<title>PlanDiff — Comparateur de plans PDF</title>
 <style>
-:root{--bg:#f4f5f7;--panel:#fff;--bd:#d9dce1;--tx:#1f2430;--mut:#6b7280;--red:#e5192b;--green:#0284c7;--blue:#2563eb}
-*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column}
-header{background:var(--panel);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-h1{font-size:16px;margin:0 8px 0 0}
-label.f{display:flex;flex-direction:column;font-size:11px;color:var(--mut);gap:2px}
-input[type=number]{width:70px}input[type=file]{max-width:200px}
-button{background:var(--blue);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
-button.sec{background:#fff;color:var(--tx);border:1px solid var(--bd)}button.on{background:var(--tx);color:#fff}
-button:disabled{opacity:.5;cursor:wait}
-main{flex:1;display:flex;min-height:0}
-#stage{flex:1;display:flex;flex-direction:column;min-width:0}
-#bar{padding:6px 10px;display:flex;gap:8px;align-items:center;background:var(--panel);border-bottom:1px solid var(--bd);flex-wrap:wrap}
-#views{flex:1;display:flex;gap:2px;min-height:0;background:#888}
-.vp{flex:1;position:relative;overflow:hidden;background:#fff;cursor:grab;min-width:0}.vp.drag{cursor:grabbing}
+:root{--bg:#0e1116;--panel:#151922;--panel2:#1c212c;--hover:#232a37;--bd:#2a313f;--tx:#e8ebf1;--mut:#8e97a8;--acc:#7b8cff;--acc2:#5568f0;--ws:#0b0e13;--dot:#1b212c;
+--red:#ff4d5e;--blue:#3aa7ff;--ok:#34d399;--sh:0 8px 30px rgba(0,0,0,.45);--r:12px}
+@media(prefers-color-scheme:light){:root{--bg:#f3f5f9;--panel:#fff;--panel2:#f0f2f7;--hover:#e7ebf3;--bd:#dde2ec;--tx:#1a2030;--mut:#6a7388;--acc:#4f5fe0;--acc2:#3d4cc9;--ws:#e3e7ef;--dot:#d3d9e5;--red:#e5192b;--blue:#0a84e0;--sh:0 8px 28px rgba(30,40,70,.16)}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:13px/1.4 Inter,"Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);display:grid;grid-template-rows:56px 1fr;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+/* header */
+header{display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--bd);position:relative;z-index:30}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;letter-spacing:-.2px;margin-right:6px}
+.logo i{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--red),var(--blue));display:grid;place-items:center;color:#fff}
+.logo small{display:block;font-weight:500;font-size:10.5px;color:var(--mut);letter-spacing:0;margin-top:-2px}
+.chip{display:flex;align-items:center;gap:9px;height:38px;min-width:200px;max-width:260px;padding:0 12px 0 10px;border:1px dashed var(--bd);border-radius:10px;background:var(--panel2);cursor:pointer;transition:.15s;position:relative}
+.chip:hover,.chip.drop{border-color:var(--acc);background:var(--hover)}
+.chip.has{border-style:solid}
+.chip .dot{width:10px;height:10px;border-radius:50%;flex:none}
+.chip b{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);display:block;line-height:1}
+.chip span.n{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;max-width:190px}
+.chip input{display:none}
+.swap{width:28px;height:28px;border-radius:8px;color:var(--mut);display:grid;place-items:center}.swap:hover{background:var(--hover);color:var(--tx)}
+.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:10px;background:var(--panel2);border:1px solid var(--bd);font-weight:500;transition:.15s}
+.btn:hover:not(:disabled){background:var(--hover)}
+.btn.pri{background:linear-gradient(180deg,var(--acc),var(--acc2));border-color:transparent;color:#fff;font-weight:600;box-shadow:0 4px 14px rgba(85,104,240,.35)}
+.btn.pri:hover:not(:disabled){filter:brightness(1.08);background:linear-gradient(180deg,var(--acc),var(--acc2))}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.pop{position:absolute;top:50px;background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh);padding:14px;display:none;z-index:50}
+.pop.show{display:block}
+.pop h4{margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut)}
+.pop label.row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:8px 0}
+.pop input[type=number]{width:76px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;text-align:right}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:8px;text-align:left}.menu button:hover:not(:disabled){background:var(--hover)}.menu button:disabled{opacity:.4}
+/* main */
+main{display:grid;grid-template-columns:58px 1fr 340px;min-height:0}
+.rail{background:var(--panel);border-right:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0}
+.rail button{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--mut);position:relative;transition:.12s}
+.rail button:hover{background:var(--hover);color:var(--tx)}
+.rail button.on{background:color-mix(in srgb,var(--acc) 20%,transparent);color:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 50%,transparent)}
+.rail hr{width:26px;border:0;border-top:1px solid var(--bd);margin:6px 0}
+.rail button[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50px;top:50%;transform:translateY(-50%);background:#000c;color:#fff;font-size:11.5px;padding:4px 9px;border-radius:7px;white-space:nowrap;z-index:60;pointer-events:none}
+#stage{position:relative;min-width:0;background:var(--ws);background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:22px 22px}
+#views{position:absolute;inset:0;display:flex;gap:2px}
+.vp{flex:1;position:relative;overflow:hidden;cursor:grab;min-width:0}.vp.drag{cursor:grabbing}
 .vp canvas{position:absolute;left:0;top:0}
-#handle{position:absolute;top:0;bottom:0;width:4px;background:var(--blue);cursor:ew-resize;z-index:5;display:none}
-#handle::after{content:"⇆";position:absolute;top:50%;left:-10px;width:24px;height:24px;margin-top:-12px;background:var(--blue);color:#fff;border-radius:50%;text-align:center;line-height:24px}
-.tag{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.65);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;z-index:4}
-aside{width:340px;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column}
-aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(--bd)}
-#list{overflow:auto;flex:1}
-.z{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer}.z:hover,.z.sel{background:#eef3ff}
-.z b{color:var(--blue)}.r{color:var(--red)}.g{color:var(--green)}.t{font-size:12px;color:var(--mut);margin-top:3px;word-break:break-word}
-.legend{display:flex;gap:12px;font-size:12px;align-items:center}.sw{width:12px;height:12px;display:inline-block;border-radius:2px;vertical-align:-2px;margin-right:3px}
-#msg{padding:30px;color:var(--mut);background:#fff;flex:1}
-.sep{width:1px;height:22px;background:var(--bd)}.mono{font:12px monospace;color:var(--mut)}.nud button{padding:4px 8px}.mini{font-size:11px;color:var(--mut);display:flex;align-items:center;gap:4px}.mini input[type=range]{width:70px}#bar button.sec{padding:5px 9px}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;padding:9px 16px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:60}
-#tm{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center}#tm div{background:#fff;padding:16px;border-radius:12px;display:flex;gap:8px;min-width:340px}#tm input{flex:1;padding:6px}
+.tag{position:absolute;top:64px;left:14px;background:#000a;color:#fff;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;z-index:4;backdrop-filter:blur(6px)}
+#handle{position:absolute;top:0;bottom:0;width:3px;background:var(--acc);cursor:ew-resize;z-index:5;display:none;box-shadow:0 0 12px var(--acc)}
+#handle::after{content:"⇆";position:absolute;top:50%;left:-13px;width:29px;height:29px;margin-top:-14px;background:var(--acc);color:#fff;border-radius:50%;text-align:center;line-height:29px;box-shadow:var(--sh)}
+.float{position:absolute;z-index:10;background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(12px);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--sh)}
+#modes{top:14px;left:50%;transform:translateX(-50%);display:flex;padding:4px;gap:2px}
+#modes button{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;color:var(--mut);font-weight:500;transition:.12s;white-space:nowrap}
+#modes button:hover{color:var(--tx)}#modes button.on{background:var(--acc);color:#fff;box-shadow:0 3px 10px rgba(85,104,240,.4)}
+#pagebar{top:14px;left:14px;display:flex;align-items:center;gap:4px;padding:4px 6px}
+#pagebar select{background:transparent;border:0;padding:5px 4px;font-weight:500;outline:none;cursor:pointer}
+#pagebar select option{background:var(--panel)}
+#dock{bottom:14px;left:50%;transform:translateX(-50%);width:max-content;display:flex;align-items:center;gap:14px;padding:8px 14px;max-width:calc(100% - 28px);flex-wrap:wrap;justify-content:center}
+#dock .grp{display:flex;align-items:center;gap:8px}
+#dock .sep{width:1px;height:26px;background:var(--bd)}
+#dock .lbl{font-size:11px;color:var(--mut)}
+#off{font:12px ui-monospace,Consolas,monospace;color:var(--tx);background:var(--panel2);border-radius:8px;padding:5px 9px;white-space:nowrap}
+.pad{display:grid;grid-template-columns:repeat(3,26px);grid-template-rows:repeat(2,26px);gap:3px}
+.pad button{background:var(--panel2);border-radius:7px;display:grid;place-items:center;color:var(--mut)}.pad button:hover{background:var(--hover);color:var(--tx)}
+.pad .u{grid-column:2}.pad .l{grid-row:2;grid-column:1}.pad .d{grid-row:2;grid-column:2}.pad .r{grid-row:2;grid-column:3}
+.mini{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut)}
+input[type=range]{accent-color:var(--acc);width:84px}
+.tg{display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--mut);font-size:12px}
+.tg input{accent-color:var(--acc)}
+.sm{height:30px;padding:0 10px;border-radius:8px;background:var(--panel2);font-size:12px;font-weight:500}.sm:hover{background:var(--hover)}
+#zoom{top:14px;right:14px;display:flex;align-items:center;padding:3px}
+#zoom button{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--mut)}#zoom button:hover{background:var(--hover);color:var(--tx)}
+#zl{min-width:46px;text-align:center;font:12px ui-monospace,monospace;color:var(--mut)}
+.legend{display:flex;gap:12px;font-size:11.5px;color:var(--mut);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+/* panneau droit */
+aside{background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}
+aside .hd{padding:14px 16px 12px;border-bottom:1px solid var(--bd)}
+aside h2{margin:0;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+#sum{font-weight:500;font-size:11.5px;color:var(--mut);margin-top:3px}
+#chips{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:var(--panel2)}
+.pill.r{color:var(--red)}.pill.b{color:var(--blue)}.pill.t{color:var(--acc)}
+#list{overflow:auto;flex:1;padding:10px}
+.z{padding:10px 12px;border-radius:11px;margin-bottom:7px;cursor:pointer;background:var(--panel2);border:1px solid transparent;transition:.12s}
+.z:hover{background:var(--hover)}.z.sel{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,var(--panel2))}
+.z .top{display:flex;align-items:center;gap:8px}
+.z .num{width:22px;height:22px;border-radius:7px;background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;display:grid;place-items:center}
+.z .cnt{margin-left:auto;display:flex;gap:6px;font-size:11.5px;font-weight:600}.r{color:var(--red)}.g,.b{color:var(--blue)}
+.z .t{font-size:12px;color:var(--mut);margin-top:6px;word-break:break-word;padding-left:30px}
+.z .t s{color:var(--red);text-decoration-thickness:1px}.z .t u{color:var(--blue);text-decoration:none;font-weight:600}
+.note{padding:10px 12px;border-radius:10px;background:color-mix(in srgb,#f59e0b 14%,var(--panel2));color:var(--tx);font-size:12px;margin-bottom:7px}
+.empty{padding:34px 18px;text-align:center;color:var(--mut)}.empty .ok{width:46px;height:46px;border-radius:50%;background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);display:grid;place-items:center;margin:0 auto 10px}
+/* écran d'accueil / chargement */
+#msg{position:absolute;inset:0;display:grid;place-items:center;padding:20px}
+.card{max-width:520px;text-align:center;background:var(--panel);border:1px solid var(--bd);border-radius:20px;padding:34px 34px 28px;box-shadow:var(--sh)}
+.card h3{margin:14px 0 6px;font-size:20px;letter-spacing:-.3px}.card p{margin:0;color:var(--mut);font-size:13px}
+.card .ic{width:60px;height:60px;border-radius:18px;margin:0 auto;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--red),var(--blue))}
+.card .ic svg{width:30px;height:30px}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.drop{border:1.5px dashed var(--bd);border-radius:14px;padding:18px 10px;cursor:pointer;transition:.15s;background:var(--panel2)}
+.drop:hover,.drop.drop-on{border-color:var(--acc);background:var(--hover)}
+.drop b{display:block;font-size:13px;margin-top:6px}.drop small{color:var(--mut);font-size:11.5px}
+.drop .d{width:10px;height:10px;border-radius:50%;display:inline-block}
+.spin{width:38px;height:38px;border:3px solid var(--bd);border-top-color:var(--acc);border-radius:50%;animation:s 0.8s linear infinite;margin:0 auto 14px}@keyframes s{to{transform:rotate(360deg)}}
+kbd{background:var(--panel2);border:1px solid var(--bd);border-bottom-width:2px;border-radius:5px;padding:0 5px;font:11px ui-monospace,monospace}
+#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:12.5px;font-weight:500;opacity:0;transition:opacity .3s;pointer-events:none;z-index:80;box-shadow:var(--sh)}
+#tm{display:none;position:fixed;inset:0;background:#0008;z-index:70;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+#tm>div{background:var(--panel);border:1px solid var(--bd);padding:16px;border-radius:14px;display:flex;gap:8px;min-width:380px;box-shadow:var(--sh)}
+#tm input{flex:1;padding:8px 10px;background:var(--panel2);border:1px solid var(--bd);border-radius:9px;outline:none}#tm input:focus{border-color:var(--acc)}
+@media(max-width:1100px){main{grid-template-columns:58px 1fr 280px}.chip{min-width:150px}}
 </style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 14a1.5 1.5 0 0 1 2.4-1.7L8 14"/></symbol>
+<symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1-.6-7.96 5.5 5.5 0 0 1 10.7 1.2A3.5 3.5 0 0 1 17 18z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M6 18L18 6M9 6h9v9"/></symbol>
+<symbol id="i-type" viewBox="0 0 24 24"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-cols" viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+<symbol id="i-l" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="i-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-u" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="i-d" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l5 5v13H6zM14 3v5h5"/></symbol>
+</defs></svg>
+
 <header>
- <h1>Comparateur de plans PDF</h1>
- <label class="f">A — ancien<input type="file" id="fa" accept="application/pdf"></label>
- <label class="f">B — nouveau<input type="file" id="fb" accept="application/pdf"></label>
- <label class="f">Tolérance (mm)<input type="number" id="tol" value="2" min="0.1" step="0.1"></label>
- <label class="f">Regroupement (mm)<input type="number" id="clu" value="15" min="1" step="1"></label>
- <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="al"> Recalage auto</label>
- <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="ct" checked> Comparer les textes</label>
- <button id="go">Comparer</button>
-</header>
-<main>
- <div id="stage">
-  <div id="bar">
-   <button class="sec on" data-m="overlay">Superposition</button>
-   <button class="sec" data-m="slider">Rideau</button>
-   <button class="sec" data-m="blink">Clignotement</button>
-   <button class="sec" data-m="side">Côte à côte</button>
-   <span class="sep"></span>
-   <button class="sec on" data-t="pan">✋ Navigation</button>
-   <button class="sec" data-t="align">⌖ Recalage B</button>
-   <button class="sec" data-t="cloud">☁ Nuage</button>
-   <button class="sec" data-t="arrow">↗ Flèche</button>
-   <button class="sec" data-t="text">T Texte</button>
-   <button class="sec" id="undo">↶</button><button class="sec" id="clear">Effacer</button>
-   <span class="sep"></span>
-   <span id="off" class="mono">ΔX 0 mm · ΔY 0 mm</span>
-   <span class="nud"><button class="sec" data-n="-1,0">←</button><button class="sec" data-n="0,-1">↑</button><button class="sec" data-n="0,1">↓</button><button class="sec" data-n="1,0">→</button></span>
-   <button class="sec" id="auto">Auto</button><button class="sec" id="reset">Réinit.</button>
-   <span class="sep"></span>
-   <label class="mini">Contraste <input type="range" id="sens" min="10" max="100" value="40"></label>
-   <label class="mini">Clignot. <input type="range" id="bspeed" min="150" max="1500" step="50" value="600"></label>
-   <label class="mini"><input type="checkbox" id="vec" checked> Écarts vectoriels</label>
-   <select id="res" title="Résolution du rendu"><option value="1.5">Standard</option><option value="2" selected>Haute déf.</option><option value="3">Ultra HD</option></select>
-   <span class="sep"></span>
-   <select id="pg"></select>
-   <button class="sec" id="fit">Ajuster</button>
-   <span class="legend"><span><i class="sw" style="background:var(--red)"></i>Ancien (A)</span><span><i class="sw" style="background:var(--green)"></i>Nouveau (B)</span><span><i class="sw" style="background:#222"></i>Identique</span></span>
-   <span style="flex:1"></span>
-   <button class="sec" id="xpng" disabled>Export PNG</button><button class="sec" id="xpdf" disabled>Export PDF</button><button class="sec" id="xcsv" disabled>Export CSV</button>
+ <div class="logo"><i><svg class="i" style="stroke:#fff"><use href="#i-layers"/></svg></i><div>PlanDiff<small>Comparateur de plans PDF</small></div></div>
+ <label class="chip" id="ca" data-side="A"><span class="dot" style="background:var(--red)"></span><div><b>A · Ancien</b><span class="n" id="na">Choisir ou déposer un PDF</span></div><input type="file" id="fa" accept="application/pdf"></label>
+ <button class="swap" id="swp" title="Inverser A et B"><svg class="i"><use href="#i-swap"/></svg></button>
+ <label class="chip" id="cb" data-side="B"><span class="dot" style="background:var(--blue)"></span><div><b>B · Nouveau</b><span class="n" id="nb">Choisir ou déposer un PDF</span></div><input type="file" id="fb" accept="application/pdf"></label>
+ <button class="btn pri" id="go"><svg class="i"><use href="#i-layers"/></svg>Comparer</button>
+ <div style="position:relative">
+  <button class="btn" id="sbtn" title="Réglages de comparaison"><svg class="i"><use href="#i-gear"/></svg>Réglages</button>
+  <div class="pop" id="spop" style="left:0;width:300px">
+   <h4>Comparaison</h4>
+   <label class="row"><span>Tolérance (mm sur papier)</span><input type="number" id="tol" value="2" min="0.1" step="0.1"></label>
+   <label class="row"><span>Regroupement des zones (mm)</span><input type="number" id="clu" value="15" min="1" step="1"></label>
+   <label class="row tg"><span>Recalage automatique</span><input type="checkbox" id="al"></label>
+   <label class="row tg"><span>Comparer les textes</span><input type="checkbox" id="ct" checked></label>
+   <div style="font-size:11.5px;color:var(--mut);margin-top:6px">Cliquez sur « Comparer » pour appliquer.</div>
   </div>
-  <div id="views"><div id="msg">Choisissez deux PDF puis cliquez sur « Comparer ». Tout reste sur votre ordinateur : aucun fichier n'est envoyé.</div></div>
  </div>
- <aside><h2 id="sum">Différences</h2><div id="list"></div></aside>
+ <span style="flex:1"></span>
+ <div style="position:relative">
+  <button class="btn" id="ebtn"><svg class="i"><use href="#i-dl"/></svg>Exporter</button>
+  <div class="pop menu" id="epop" style="right:0;width:230px;padding:6px">
+   <button id="xpng" disabled><svg class="i"><use href="#i-dl"/></svg>Image PNG haute déf.</button>
+   <button id="xpdf" disabled><svg class="i"><use href="#i-file"/></svg>Rapport PDF</button>
+   <button id="xcsv" disabled><svg class="i"><use href="#i-file"/></svg>Tableau CSV</button>
+  </div>
+ </div>
+</header>
+
+<main>
+ <nav class="rail">
+  <button class="on" data-t="pan" data-tip="Navigation (V)"><svg class="i"><use href="#i-hand"/></svg></button>
+  <button data-t="align" data-tip="Recalage du plan B (R)"><svg class="i"><use href="#i-move"/></svg></button>
+  <hr>
+  <button data-t="cloud" data-tip="Nuage de révision (C)"><svg class="i"><use href="#i-cloud"/></svg></button>
+  <button data-t="arrow" data-tip="Flèche (F)"><svg class="i"><use href="#i-arrow"/></svg></button>
+  <button data-t="text" data-tip="Note texte (T)"><svg class="i"><use href="#i-type"/></svg></button>
+  <hr>
+  <button id="undo" data-tip="Annuler (Ctrl+Z)"><svg class="i"><use href="#i-undo"/></svg></button>
+  <button id="clear" data-tip="Tout effacer"><svg class="i"><use href="#i-trash"/></svg></button>
+ </nav>
+
+ <section id="stage">
+  <div id="views">
+   <div id="msg"><div class="card">
+     <div class="ic"><svg class="i" style="stroke:#fff"><use href="#i-layers"/></svg></div>
+     <h3>Comparez deux versions d'un plan</h3>
+     <p>Déposez vos deux PDF vectoriels : les ajouts, suppressions et changements de texte sont détectés automatiquement.<br>Tout reste sur votre ordinateur.</p>
+     <div class="drops">
+       <div class="drop" data-side="A"><span class="d" style="background:var(--red)"></span><b>Plan A · ancien</b><small>Cliquer ou déposer</small></div>
+       <div class="drop" data-side="B"><span class="d" style="background:var(--blue)"></span><b>Plan B · nouveau</b><small>Cliquer ou déposer</small></div>
+     </div>
+   </div></div>
+  </div>
+  <div class="float" id="pagebar"><select id="pg"></select><select id="res" title="Résolution du rendu"><option value="1.5">Standard</option><option value="2" selected>Haute déf.</option><option value="3">Ultra HD</option></select></div>
+  <div class="float" id="modes">
+   <button class="on" data-m="overlay" title="Superposition (1)"><svg class="i"><use href="#i-layers"/></svg>Superposition</button>
+   <button data-m="slider" title="Rideau (2)"><svg class="i"><use href="#i-split"/></svg>Rideau</button>
+   <button data-m="blink" title="Clignotement (3)"><svg class="i"><use href="#i-eye"/></svg>Clignotement</button>
+   <button data-m="side" title="Côte à côte (4)"><svg class="i"><use href="#i-cols"/></svg>Côte à côte</button>
+  </div>
+  <div class="float" id="dock">
+   <div class="grp"><span class="lbl">Recalage B</span><span id="off">ΔX 0 mm · ΔY 0 mm</span>
+     <div class="pad"><button class="u" data-n="0,-1"><svg class="i" style="width:14px;height:14px"><use href="#i-u"/></svg></button><button class="l" data-n="-1,0"><svg class="i" style="width:14px;height:14px"><use href="#i-l"/></svg></button><button class="d" data-n="0,1"><svg class="i" style="width:14px;height:14px"><use href="#i-d"/></svg></button><button class="r" data-n="1,0"><svg class="i" style="width:14px;height:14px"><use href="#i-r"/></svg></button></div>
+     <button class="sm" id="auto">Auto</button><button class="sm" id="reset">Réinit.</button></div>
+   <span class="sep"></span>
+   <div class="grp"><label class="mini">Contraste <input type="range" id="sens" min="10" max="100" value="40"></label>
+     <label class="mini">Clignotement <input type="range" id="bspeed" min="150" max="1500" step="50" value="600"></label>
+     <label class="tg"><input type="checkbox" id="vec" checked> Surligner les écarts</label></div>
+  </div>
+  <div class="float" id="zoom"><button id="zo" title="Zoom arrière"><svg class="i"><use href="#i-minus"/></svg></button><span id="zl">100%</span><button id="zi" title="Zoom avant"><svg class="i"><use href="#i-plus"/></svg></button><button id="fit" title="Ajuster à l'écran (0)"><svg class="i"><use href="#i-fit"/></svg></button></div>
+ </section>
+
+ <aside>
+  <div class="hd"><h2>Différences</h2><div id="sum">Aucune comparaison</div><div id="chips"></div><div class="legend"><span><i style="background:var(--red)"></i>Ancien (A)</span><span><i style="background:var(--blue)"></i>Nouveau (B)</span><span><i style="background:var(--tx)"></i>Identique</span></div></div>
+  <div id="list"><div class="empty">Les zones modifiées apparaîtront ici.<br><br><small>Raccourcis : <kbd>V</kbd> navigation · <kbd>R</kbd> recalage · <kbd>1</kbd>–<kbd>4</kbd> modes · <kbd>0</kbd> ajuster</small></div></div>
+ </aside>
 </main>
-<div id="toast"></div><div id="tm"><div><input id="tmi" placeholder="Ex : profondeur canalisation modifiée…"><button id="tmok">Ajouter</button><button class="sec" id="tmno">Annuler</button></div></div>
+
+<div id="toast"></div>
+<div id="tm"><div><input id="tmi" placeholder="Ex : profondeur canalisation modifiée…"><button class="btn pri" id="tmok">Ajouter</button><button class="btn" id="tmno">Annuler</button></div></div>
 <script>/**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page
@@ -707,8 +848,8 @@ function compare(A, B, p) {
 /* ------------------------------------------------------------------ état / UI */
 let docA, docB, R = null, page = 0, mode = "overlay", tool = "pan", view = { k: 1, x: 0, y: 0 }, sliderX = .5, sel = null, ras = null,
   names = ["A", "B"], blinkB = false, blinkT = null, blinkMs = 600, fast = false, recT = 0, cvs = [], pendingText = null;
-const RED = "#e5192b", BLUE = "#0284c7";
-const status = t => { clearInterval(blinkT); $("#views").innerHTML = `<div id="msg">${t}</div>`; };
+const RED = "#ff3b4e", BLUE = "#1e90ff";
+const status = t => { clearInterval(blinkT); cvs = []; $("#views").innerHTML = `<div id="msg"><div class="card">${/^Erreur/.test(t) ? "" : '<div class="spin"></div>'}<p style="color:var(--tx);font-size:14px">${t}</p></div></div>`; };
 const readDoc = async f => pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
 const toast = t => { const e = $("#toast"); e.textContent = t; e.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.opacity = 0, 3000); };
 const resScale = P => Math.min(+$("#res").value || 2, 8000 / Math.max(P.w, P.h));
@@ -837,15 +978,17 @@ function drawNow() {
   if (!R || !ras) return; const P = R.pages[page], dpr = window.devicePixelRatio || 1, z = P.zones.find(z => z.id === sel);
   for (const { vp, c, which, tag } of cvs) {
     const W = vp.clientWidth, H = vp.clientHeight; if (c.width !== Math.round(W*dpr) || c.height !== Math.round(H*dpr)) { c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); c.style.width = W+"px"; c.style.height = H+"px"; }
-    const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
     const T = () => ctx.setTransform(dpr*view.k, 0, 0, dpr*view.k, dpr*view.x, dpr*view.y), opt = { fast, vec: $("#vec").checked };
+    const pageBg = () => { ctx.save(); T(); ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 28*dpr; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, P.w, P.h); ctx.restore(); };
     if (which === "slider") { const cx = sliderX * c.width;
-      ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z, opt); ctx.restore();
-      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); T(); drawLayer(ctx, P, "b", view.k, ras, z, opt); ctx.restore();
+      pageBg(); ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z, opt); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.clearRect(0, 0, c.width, c.height); pageBg(); T(); drawLayer(ctx, P, "b", view.k, ras, z, opt); ctx.restore();
       const h = vp.querySelector("#handle"); if (h) h.style.left = (sliderX*W - 2) + "px"; }
-    else if (which === "blink") { T(); drawLayer(ctx, P, blinkB ? "b" : "a", view.k, ras, z, opt); tag.textContent = blinkB ? "PLAN B (nouveau)" : "PLAN A (ancien)"; tag.style.background = blinkB ? BLUE : RED; }
-    else { T(); drawLayer(ctx, P, which, view.k, ras, z, opt); }
+    else if (which === "blink") { pageBg(); T(); drawLayer(ctx, P, blinkB ? "b" : "a", view.k, ras, z, opt); tag.textContent = blinkB ? "PLAN B (nouveau)" : "PLAN A (ancien)"; tag.style.background = blinkB ? "#1e90ffcc" : "#ff3b4ecc"; }
+    else { pageBg(); T(); drawLayer(ctx, P, which, view.k, ras, z, opt); }
   }
+  $("#zl").textContent = Math.round(view.k * 100) + "%";
 }
 function fit() { const P = R.pages[page], vp = cvs[0].vp; view.k = Math.min(vp.clientWidth/P.w, vp.clientHeight/P.h) * .98; view.x = (vp.clientWidth - P.w*view.k)/2; view.y = (vp.clientHeight - P.h*view.k)/2; draw(); }
 
@@ -895,14 +1038,16 @@ const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&g
 const inZone = (t, z, sh) => { const b = t.a || (t.b && [t.b[0]-sh[0], t.b[1]-sh[1], t.b[2]-sh[0], t.b[3]-sh[1]]); return b && b[0] >= z.bbox[0]-20 && b[2] <= z.bbox[2]+20 && b[1] >= z.bbox[1]-20 && b[3] <= z.bbox[3]+20; };
 function renderList() {
   const P = R.pages[page], L = $("#list"); L.innerHTML = "";
-  $("#sum").textContent = `Page ${P.page} : ${P.zones.length} zone(s) — −${P.removed.length/4} / +${P.added.length/4} traits, ${P.texts.length} texte(s)`;
-  const add = html => { const d = document.createElement("div"); d.className = "z"; d.innerHTML = html; L.append(d); return d; };
-  if (R.nA !== R.nB) add(`⚠ Nombre de pages différent (A : ${R.nA}, B : ${R.nB}). Seules les pages communes sont comparées.`);
-  if (P.identical) add("Aucune différence à cette tolérance.");
+  const nr = P.removed.length/4, na = P.added.length/4;
+  $("#sum").textContent = `Page ${P.page} · ${P.zones.length} zone${P.zones.length > 1 ? "s" : ""} modifiée${P.zones.length > 1 ? "s" : ""}`;
+  $("#chips").innerHTML = `<span class="pill r">− ${nr} traits</span><span class="pill b">+ ${na} traits</span><span class="pill t">${P.texts.length} texte${P.texts.length > 1 ? "s" : ""}</span>`;
+  const add = (html, cls = "z") => { const d = document.createElement("div"); d.className = cls; d.innerHTML = html; L.append(d); return d; };
+  if (R.nA !== R.nB) add(`⚠ Nombre de pages différent (A : ${R.nA}, B : ${R.nB}). Seules les pages communes sont comparées.`, "note");
+  if (P.identical) add(`<div class="ok"><svg class="i" style="width:24px;height:24px"><use href="#i-check"/></svg></div><b style="color:var(--tx)">Aucune différence</b><br>à cette tolérance (${R.p.tol} mm).`, "empty");
   P.zones.forEach(z => {
     const tx = P.texts.filter(t => inZone(t, z, P.shift));
-    const d = add(`<b>Zone ${z.id}</b> &nbsp;<span class="r">−${z.removed}</span> <span class="g">+${z.added}</span> traits · ${z.text} texte(s)` +
-      tx.slice(0, 4).map(t => `<div class="t">${t.kind === "modified" ? `« ${esc(t.old)} » → « ${esc(t.nw)} »` : t.kind === "added" ? `+ « ${esc(t.nw)} »` : `− « ${esc(t.old)} »`}</div>`).join("") +
+    const d = add(`<div class="top"><span class="num">${z.id}</span><b>Zone ${z.id}</b><span class="cnt"><span class="r">− ${z.removed}</span><span class="b">+ ${z.added}</span><span style="color:var(--acc)">${z.text} T</span></span></div>` +
+      tx.slice(0, 4).map(t => `<div class="t">${t.kind === "modified" ? `<s>${esc(t.old)}</s> → <u>${esc(t.nw)}</u>` : t.kind === "added" ? `<u>+ ${esc(t.nw)}</u>` : `<s>${esc(t.old)}</s>`}</div>`).join("") +
       (tx.length > 4 ? `<div class="t">… +${tx.length-4} autres textes</div>` : ""));
     if (z.id === sel) d.classList.add("sel");
     d.onclick = () => { sel = z.id; renderList(); zoomTo(z); };
@@ -941,5 +1086,36 @@ $("#xpdf").onclick = async () => {
   for (const P of R.pages) { const c = await exportCanvas(P, 1.5); doc.addPage([P.w, P.h], P.w > P.h ? "l" : "p"); doc.addImage(c.toDataURL("image/jpeg", .88), "JPEG", 0, 0, P.w, P.h); }
   doc.save("comparaison.pdf"); $("#xpdf").disabled = false;
 };
+
+/* ------------------------------------------------------------------ ergonomie */
+const slot = { A: null, B: null };
+function setFile(side, f) {
+  if (!f || !/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return toast("Fichier PDF requis.");
+  slot[side] = f; const inp = $(side === "A" ? "#fa" : "#fb"), dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files;
+  $(side === "A" ? "#na" : "#nb").textContent = f.name; $(side === "A" ? "#ca" : "#cb").classList.add("has");
+  if ($("#fa").files[0] && $("#fb").files[0]) $("#go").click(); else toast(`Plan ${side} chargé — choisissez maintenant le plan ${side === "A" ? "B" : "A"}.`);
+}
+["fa", "fb"].forEach(id => $("#" + id).addEventListener("change", e => { const f = e.target.files[0]; if (f && slot[id === "fa" ? "A" : "B"] !== f) setFile(id === "fa" ? "A" : "B", f); }));
+$("#swp").onclick = () => { const a = $("#fa").files[0], b = $("#fb").files[0]; if (!a || !b) return toast("Chargez d'abord les deux plans."); slot.A = slot.B = null; setFile("A", b); slot.B = null; setFile("B", a); };
+document.addEventListener("click", e => { const d = e.target.closest(".drop"); if (d) $(d.dataset.side === "A" ? "#fa" : "#fb").click(); });
+const dz = (el, side) => { el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("drop", "drop-on"); }); el.addEventListener("dragleave", () => el.classList.remove("drop-on"));
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("drop-on"); const fs = [...e.dataTransfer.files]; if (side) setFile(side, fs[0]); else { if (fs[0]) setFile(el.dataset.side, fs[0]); } e.stopPropagation(); }); };
+dz($("#ca"), "A"); dz($("#cb"), "B");
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); const t = e.target.closest(".drop"); const fs = [...e.dataTransfer.files].filter(f => /\.pdf$/i.test(f.name));
+  if (t) return setFile(t.dataset.side, fs[0]);
+  if (fs.length >= 2) { setFile("A", fs[0]); setFile("B", fs[1]); } else if (fs.length === 1) setFile($("#fa").files[0] ? "B" : "A", fs[0]); });
+/* menus déroulants */
+const toggle = (btn, pop) => { $(btn).onclick = e => { e.stopPropagation(); const on = !$(pop).classList.contains("show"); document.querySelectorAll(".pop").forEach(p => p.classList.remove("show")); $(pop).classList.toggle("show", on); }; };
+toggle("#sbtn", "#spop"); toggle("#ebtn", "#epop");
+document.addEventListener("click", e => { if (!e.target.closest(".pop")) document.querySelectorAll(".pop").forEach(p => p.classList.remove("show")); });
+document.querySelectorAll("#epop button").forEach(b => b.addEventListener("click", () => $("#epop").classList.remove("show")));
+/* zoom */
+const zoomC = f => { if (!R || !cvs.length) return; const vp = cvs[0].vp, mx = vp.clientWidth/2, my = vp.clientHeight/2, nk = Math.min(80, Math.max(.02, view.k*f)), q = nk/view.k; view.x = mx-(mx-view.x)*q; view.y = my-(my-view.y)*q; view.k = nk; draw(); };
+$("#zi").onclick = () => zoomC(1.3); $("#zo").onclick = () => zoomC(1/1.3);
+/* raccourcis */
+window.addEventListener("keydown", e => { if (!R || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.ctrlKey && e.key !== "z" || e.metaKey) return;
+  const k = e.key.toLowerCase(), T = { v: "pan", h: "pan", r: "align", c: "cloud", f: "arrow", t: "text" }, M = { 1: "overlay", 2: "slider", 3: "blink", 4: "side" };
+  if (T[k]) setTool(T[k]); else if (M[k]) document.querySelector(`[data-m=${M[k]}]`).click(); else if (k === "0") fit(); else if (k === "z" && e.ctrlKey) $("#undo").click(); else if (k === "+" || k === "=") zoomC(1.3); else if (k === "-") zoomC(1/1.3); });
 </script>
 </body></html>
