@@ -139,7 +139,7 @@ const dice = (a, b) => { if (a === b) return 1; if (a.length < 2 || b.length < 2
 function compare(A, B, p) {
   const tol = p.tol*MM, step = Math.max(Math.min(tol/2, 3), 0.5), thr = tol + step*0.5;
   const sa = sample(A.segs, step), sb = sample(B.segs, step);
-  let shift = [0, 0]; if (p.align && sa.n > 100 && sb.n > 100) shift = estimateShift(sa, sb, tol, B.w, B.h);
+  let shift = [0, 0]; if (p.fixedShift) shift = p.fixedShift.slice(); else if (p.align && sa.n > 100 && sb.n > 100) shift = estimateShift(sa, sb, tol, B.w, B.h);
   const gB = buildGrid(sb.pts, thr, 0, 0), gA = buildGrid(sa.pts, thr, shift[0], shift[1]);
   const removed = pick(A.segs, unmatched(sa, shift[0], shift[1], gB, thr));
   const added = pick(B.segs, unmatched(sb, 0, 0, gA, thr));
@@ -181,10 +181,13 @@ function compare(A, B, p) {
 }
 
 /* ------------------------------------------------------------------ état / UI */
-let docA, docB, R = null, page = 0, mode = "overlay", view = { k: 1, x: 0, y: 0 }, sliderX = .5, sel = null, ras = null, names = ["A", "B"];
-const RED = "#e5192b", GREEN = "#16a34a";
-const status = t => $("#views").innerHTML = `<div id="msg">${t}</div>`;
+let docA, docB, R = null, page = 0, mode = "overlay", tool = "pan", view = { k: 1, x: 0, y: 0 }, sliderX = .5, sel = null, ras = null,
+  names = ["A", "B"], blinkB = false, blinkT = null, blinkMs = 600, fast = false, recT = 0, cvs = [], pendingText = null;
+const RED = "#e5192b", BLUE = "#0284c7";
+const status = t => { clearInterval(blinkT); $("#views").innerHTML = `<div id="msg">${t}</div>`; };
 const readDoc = async f => pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+const toast = t => { const e = $("#toast"); e.textContent = t; e.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.opacity = 0, 3000); };
+const resScale = P => Math.min(+$("#res").value || 2, 8000 / Math.max(P.w, P.h));
 
 $("#go").onclick = async () => {
   const fa = $("#fa").files[0], fb = $("#fb").files[0];
@@ -197,93 +200,180 @@ $("#go").onclick = async () => {
     for (let i = 1; i <= n; i++) {
       status(`Analyse de la page ${i}/${n}…`); await new Promise(r => setTimeout(r, 30));
       const A = await extractPage(await docA.getPage(i)), B = await extractPage(await docB.getPage(i));
-      const r = compare(A, B, p); r.page = i; r.identical = !r.removed.length && !r.added.length && !r.texts.length; pages.push(r);
+      const r = compare(A, B, p); r.page = i; r.ex = { A, B }; r.ann = []; r.cur = null; r.identical = !r.removed.length && !r.added.length && !r.texts.length; pages.push(r);
     }
     R = { pages, p, nA: docA.numPages, nB: docB.numPages };
   } catch (e) { console.error(e); status("Erreur : " + e.message); $("#go").disabled = false; return; }
   $("#go").disabled = false;
   $("#pg").innerHTML = R.pages.map((p, i) => `<option value="${i}">Page ${p.page}${p.identical ? " (identique)" : ""}</option>`).join("");
-  ["#xpdf", "#xcsv"].forEach(s => $(s).disabled = false);
+  ["#xpdf", "#xcsv", "#xpng"].forEach(s => $(s).disabled = false);
   page = 0; sel = null; await loadPage(true);
 };
 $("#pg").onchange = async e => { page = +e.target.value; sel = null; await loadPage(true); };
+$("#res").onchange = () => R && loadPage(false);
+$("#sens").oninput = () => { if (ras) ras.ovKey = ""; draw(); };
+$("#bspeed").oninput = e => { blinkMs = +e.target.value; if (mode === "blink") startBlink(); };
 document.querySelectorAll("[data-m]").forEach(b => b.onclick = () => { mode = b.dataset.m; document.querySelectorAll("[data-m]").forEach(x => x.classList.toggle("on", x === b)); if (R) buildView(false); });
-$("#fit").onclick = () => fit();
+document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => setTool(b.dataset.t));
+$("#fit").onclick = () => R && fit();
+function setTool(t) { tool = t; document.querySelectorAll("[data-t]").forEach(x => x.classList.toggle("on", x.dataset.t === t));
+  document.querySelectorAll(".vp").forEach(v => v.style.cursor = t === "pan" ? "grab" : t === "align" ? "move" : "crosshair");
+  if (t === "align") toast("Recalage : glissez sur le plan pour déplacer le plan B (ou flèches du clavier)."); }
 
 async function renderRaster(doc, n, scale) {
   const pg = await doc.getPage(n), vp = pg.getViewport({ scale }), c = document.createElement("canvas");
   c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
-  await pg.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise; return c;
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: x, viewport: vp }).promise; return c;
 }
 async function loadPage(refit) {
   const P = R.pages[page]; status("Rendu de la page…");
-  const sc = Math.min(2, 8000 / Math.max(P.w, P.h));
-  ras = { sc, a: await renderRaster(docA, P.page, sc), b: await renderRaster(docB, P.page, sc) };
+  const sc = resScale(P);
+  ras = { sc, a: await renderRaster(docA, P.page, sc), b: await renderRaster(docB, P.page, sc), ov: null, ovKey: "" };
   buildView(refit);
 }
 
-/* dessin : which = 'a' | 'b' | 'ov' ; le contexte est déjà en coordonnées « points » */
-function drawLayer(ctx, P, which, k, rr, selZone) {
-  const lw = Math.max(3, 2.5 / k), sh = P.shift;
+/* superposition « pixels » : noir = identique, rouge = A seul, bleu = B seul */
+function composite(P, rr) {
+  const sens = +$("#sens").value, key = P.shift[0].toFixed(3) + "," + P.shift[1].toFixed(3) + "," + sens + "," + rr.sc;
+  if (rr.ov && rr.ovKey === key) return rr.ov;
+  const w = rr.a.width, h = rr.a.height, get = (src, dx, dy) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d", { willReadFrequently: true });
+    x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(src, dx, dy); return x.getImageData(0, 0, w, h).data; };
+  const dA = get(rr.a, 0, 0), dB = get(rr.b, -P.shift[0]*rr.sc, -P.shift[1]*rr.sc), out = new ImageData(w, h), o = out.data, thr = 255 - sens * .6;
+  for (let i = 0; i < dA.length; i += 4) {
+    const la = dA[i]*.299 + dA[i+1]*.587 + dA[i+2]*.114, lb = dB[i]*.299 + dB[i+1]*.587 + dB[i+2]*.114, ia = la < thr, ib = lb < thr;
+    o[i+3] = 255;
+    if (!ia && !ib) { o[i] = o[i+1] = o[i+2] = 255; }
+    else if (ia && ib) { const v = Math.min(la, lb); o[i] = o[i+1] = o[i+2] = v; }
+    else if (ia) { const t = 1 - la/255; o[i] = 225; o[i+1] = 255*(1 - t*.88); o[i+2] = 255*(1 - t*.85); }
+    else { const t = 1 - lb/255; o[i] = 255*(1 - t*.92); o[i+1] = 255*(1 - t*.45); o[i+2] = 235; }
+  }
+  const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").putImageData(out, 0, 0);
+  rr.ov = c; rr.ovKey = key; return c;
+}
+
+/* annotations (repère du plan A, en points) */
+function cloudPath(ctx, x1, y1, x2, y2) {
+  const l = Math.min(x1, x2), r = Math.max(x1, x2), t = Math.min(y1, y2), b = Math.max(y1, y2), w = r-l, h = b-t; if (w < 10 || h < 10) return;
+  const nx = Math.max(1, Math.round(w/24)), dx = w/nx, ny = Math.max(1, Math.round(h/24)), dy = h/ny; ctx.beginPath();
+  for (let i = 0; i < nx; i++) ctx.arc(l+(i+.5)*dx, t, dx/2, Math.PI, 0, false);
+  for (let i = 0; i < ny; i++) ctx.arc(r, t+(i+.5)*dy, dy/2, -Math.PI/2, Math.PI/2, false);
+  for (let i = nx-1; i >= 0; i--) ctx.arc(l+(i+.5)*dx, b, dx/2, 0, Math.PI, false);
+  for (let i = ny-1; i >= 0; i--) ctx.arc(l, t+(i+.5)*dy, dy/2, Math.PI/2, -Math.PI/2, false);
+  ctx.stroke();
+}
+function drawAnnotations(ctx, P, k) {
+  const list = P.cur ? [...P.ann, P.cur] : P.ann, lw = Math.max(3, 2.5/k), fs = Math.max(14, 14/k);
+  ctx.save(); ctx.strokeStyle = ctx.fillStyle = "#dc2626"; ctx.lineWidth = lw; ctx.lineJoin = "round";
+  for (const a of list) {
+    if (a.type === "cloud") cloudPath(ctx, a.x1, a.y1, a.x2, a.y2);
+    else if (a.type === "arrow") { const hl = fs*1.2, an = Math.atan2(a.y2-a.y1, a.x2-a.x1);
+      ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(a.x2, a.y2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x2, a.y2); ctx.lineTo(a.x2-hl*Math.cos(an-Math.PI/6), a.y2-hl*Math.sin(an-Math.PI/6)); ctx.lineTo(a.x2-hl*Math.cos(an+Math.PI/6), a.y2-hl*Math.sin(an+Math.PI/6)); ctx.closePath(); ctx.fill(); }
+    else if (a.type === "text") { ctx.font = `bold ${fs}px sans-serif`; const w = ctx.measureText(a.text).width + fs*.8;
+      ctx.fillStyle = "rgba(255,255,255,.92)"; ctx.fillRect(a.x1, a.y1-fs*1.1, w, fs*1.5); ctx.strokeRect(a.x1, a.y1-fs*1.1, w, fs*1.5);
+      ctx.fillStyle = "#dc2626"; ctx.fillText(a.text, a.x1 + fs*.4, a.y1); }
+  }
+  ctx.restore();
+}
+
+/* dessin d'une couche (contexte déjà en coordonnées « points ») */
+function drawLayer(ctx, P, which, k, rr, selZone, o = {}) {
+  const lw = Math.max(3, 2.5/k), sh = P.shift, vec = o.vec !== false;
   const lines = (arr, col, ox, oy) => { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = "round"; ctx.beginPath();
     for (let i = 0; i < arr.length; i += 4) { ctx.moveTo(arr[i]+ox, arr[i+1]+oy); ctx.lineTo(arr[i+2]+ox, arr[i+3]+oy); } ctx.stroke(); };
   const boxes = (col, f) => { ctx.lineWidth = Math.max(1.5, 1.5/k); ctx.fillStyle = col + "2e"; ctx.strokeStyle = col;
     for (const t of P.texts) { const b = f(t); if (b) { ctx.fillRect(b[0]-2, b[1]-2, b[2]-b[0]+4, b[3]-b[1]+4); ctx.strokeRect(b[0]-2, b[1]-2, b[2]-b[0]+4, b[3]-b[1]+4); } } };
-  const s = 1 / rr.sc;
-  if (which === "ov") { ctx.save(); ctx.globalAlpha = .28; ctx.filter = "grayscale(1)"; ctx.drawImage(rr.a, 0, 0, P.w, P.h); ctx.restore();
-    lines(P.removed, RED, 0, 0); lines(P.added, GREEN, -sh[0], -sh[1]);
-    boxes(RED, t => t.a); boxes(GREEN, t => t.b && [t.b[0]-sh[0], t.b[1]-sh[1], t.b[2]-sh[0], t.b[3]-sh[1]]); }
-  else if (which === "a") { ctx.drawImage(rr.a, 0, 0, P.w, P.h); lines(P.removed, RED, 0, 0); boxes(RED, t => t.a); }
-  else { ctx.drawImage(rr.b, 0, 0, P.w, P.h); lines(P.added, GREEN, 0, 0); boxes(GREEN, t => t.b); }
-  if (selZone && selZone.id === sel) { const [x0, y0, x1, y1] = selZone.bbox, d = which === "b" ? sh : [0, 0];
-    ctx.lineWidth = 2/k; ctx.strokeStyle = "#2563eb"; ctx.fillStyle = "#2563eb14"; ctx.fillRect(x0+d[0]-14, y0+d[1]-14, x1-x0+28, y1-y0+28); ctx.strokeRect(x0+d[0]-14, y0+d[1]-14, x1-x0+28, y1-y0+28); }
+  if (which === "ov") {
+    if (o.fast) { ctx.drawImage(rr.a, 0, 0, P.w, P.h); ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .65; ctx.drawImage(rr.b, -sh[0], -sh[1], P.w, P.h); ctx.restore(); }
+    else ctx.drawImage(composite(P, rr), 0, 0, P.w, P.h);
+    if (vec && !o.fast) { lines(P.removed, RED, 0, 0); lines(P.added, BLUE, -sh[0], -sh[1]);
+      boxes(RED, t => t.a); boxes(BLUE, t => t.b && [t.b[0]-sh[0], t.b[1]-sh[1], t.b[2]-sh[0], t.b[3]-sh[1]]); }
+  } else if (which === "a") { ctx.drawImage(rr.a, 0, 0, P.w, P.h); if (vec) { lines(P.removed, RED, 0, 0); boxes(RED, t => t.a); } }
+  else { ctx.save(); ctx.translate(-sh[0], -sh[1]); ctx.drawImage(rr.b, 0, 0, P.w, P.h); if (vec) { lines(P.added, BLUE, 0, 0); boxes(BLUE, t => t.b); } ctx.restore(); }
+  if (selZone) { const [x0, y0, x1, y1] = selZone.bbox; ctx.lineWidth = 2/k; ctx.strokeStyle = "#2563eb"; ctx.fillStyle = "#2563eb14";
+    ctx.fillRect(x0-14, y0-14, x1-x0+28, y1-y0+28); ctx.strokeRect(x0-14, y0-14, x1-x0+28, y1-y0+28); }
+  drawAnnotations(ctx, P, k);
 }
 
-let cvs = [];
 function buildView(refit) {
-  const P = R.pages[page], V = $("#views"); V.innerHTML = ""; cvs = [];
+  const V = $("#views"); V.innerHTML = ""; cvs = []; clearInterval(blinkT);
   const mk = (which, tag) => { const vp = document.createElement("div"); vp.className = "vp"; const c = document.createElement("canvas"); vp.append(c);
-    if (tag) { const t = document.createElement("div"); t.className = "tag"; t.textContent = tag; vp.append(t); } V.append(vp); cvs.push({ vp, c, which }); bind(vp); return vp; };
+    const t = document.createElement("div"); t.className = "tag"; if (tag) t.textContent = tag; else t.style.display = "none"; vp.append(t); V.append(vp); const o = { vp, c, which, tag: t }; cvs.push(o); bind(vp); return o; };
   if (mode === "overlay") mk("ov");
   else if (mode === "side") { mk("a", "A — " + names[0]); mk("b", "B — " + names[1]); }
-  else { const vp = mk("slider"); const h = document.createElement("div"); h.id = "handle"; vp.append(h); h.style.display = "block";
-    const t = document.createElement("div"); t.className = "tag"; t.textContent = "A ◀ ▶ B"; vp.append(t);
-    h.onpointerdown = e => { e.stopPropagation(); h.setPointerCapture(e.pointerId); h.onpointermove = ev => { sliderX = Math.min(1, Math.max(0, (ev.clientX - vp.getBoundingClientRect().left) / vp.clientWidth)); draw(); }; }; h.onpointerup = () => h.onpointermove = null; }
-  renderList(); requestAnimationFrame(() => { refit ? fit() : draw(); });
+  else if (mode === "blink") { mk("blink", "A"); startBlink(); }
+  else { const o = mk("slider", "A ◀ ▶ B"); const h = document.createElement("div"); h.id = "handle"; o.vp.append(h); h.style.display = "block";
+    h.onpointerdown = e => { e.stopPropagation(); h.setPointerCapture(e.pointerId); h.onpointermove = ev => { sliderX = Math.min(1, Math.max(0, (ev.clientX - o.vp.getBoundingClientRect().left) / o.vp.clientWidth)); draw(); }; }; h.onpointerup = () => h.onpointermove = null; }
+  setTool(tool); renderList(); updateOff(); requestAnimationFrame(() => { refit ? fit() : draw(); });
 }
+function startBlink() { clearInterval(blinkT); blinkT = setInterval(() => { blinkB = !blinkB; draw(); }, blinkMs); }
 let raf = 0; const draw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawNow); };
 function drawNow() {
-  if (!R) return; const P = R.pages[page], dpr = window.devicePixelRatio || 1, z = P.zones.find(z => z.id === sel);
-  for (const { vp, c, which } of cvs) {
-    const W = vp.clientWidth, H = vp.clientHeight; if (c.width !== Math.round(W*dpr)) { c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); c.style.width = W+"px"; c.style.height = H+"px"; }
+  if (!R || !ras) return; const P = R.pages[page], dpr = window.devicePixelRatio || 1, z = P.zones.find(z => z.id === sel);
+  for (const { vp, c, which, tag } of cvs) {
+    const W = vp.clientWidth, H = vp.clientHeight; if (c.width !== Math.round(W*dpr) || c.height !== Math.round(H*dpr)) { c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); c.style.width = W+"px"; c.style.height = H+"px"; }
     const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-    const T = () => ctx.setTransform(dpr*view.k, 0, 0, dpr*view.k, dpr*view.x, dpr*view.y);
+    const T = () => ctx.setTransform(dpr*view.k, 0, 0, dpr*view.k, dpr*view.x, dpr*view.y), opt = { fast, vec: $("#vec").checked };
     if (which === "slider") { const cx = sliderX * c.width;
-      ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z); ctx.restore();
-      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); T(); drawLayer(ctx, P, "b", view.k, ras, z); ctx.restore();
+      ctx.save(); T(); drawLayer(ctx, P, "a", view.k, ras, z, opt); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(cx, 0, c.width - cx, c.height); ctx.clip(); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); T(); drawLayer(ctx, P, "b", view.k, ras, z, opt); ctx.restore();
       const h = vp.querySelector("#handle"); if (h) h.style.left = (sliderX*W - 2) + "px"; }
-    else { T(); drawLayer(ctx, P, which, view.k, ras, z); }
+    else if (which === "blink") { T(); drawLayer(ctx, P, blinkB ? "b" : "a", view.k, ras, z, opt); tag.textContent = blinkB ? "PLAN B (nouveau)" : "PLAN A (ancien)"; tag.style.background = blinkB ? BLUE : RED; }
+    else { T(); drawLayer(ctx, P, which, view.k, ras, z, opt); }
   }
 }
 function fit() { const P = R.pages[page], vp = cvs[0].vp; view.k = Math.min(vp.clientWidth/P.w, vp.clientHeight/P.h) * .98; view.x = (vp.clientWidth - P.w*view.k)/2; view.y = (vp.clientHeight - P.h*view.k)/2; draw(); }
+
+/* recalage manuel : P.shift = translation A->B ; B est affiché à -shift */
+function updateOff() { if (!R) return; const P = R.pages[page]; $("#off").textContent = `ΔX ${(-P.shift[0]/MM).toFixed(2)} mm · ΔY ${(-P.shift[1]/MM).toFixed(2)} mm`; }
+function setShift(sx, sy) {
+  const P = R.pages[page]; P.shift = [sx, sy]; fast = true; updateOff(); draw(); clearTimeout(recT);
+  recT = setTimeout(() => { const r = compare(P.ex.A, P.ex.B, { ...R.p, fixedShift: P.shift });
+    Object.assign(P, { removed: r.removed, added: r.added, texts: r.texts, zones: r.zones }); P.identical = !r.removed.length && !r.added.length && !r.texts.length;
+    sel = null; fast = false; ras.ovKey = ""; renderList(); draw(); }, 350);
+}
+const nudge = (dx, dy) => { const P = R.pages[page], st = 1 / ras.sc; setShift(P.shift[0] - dx*st, P.shift[1] - dy*st); };   // B se déplace de (+dx,+dy)
+$("#reset").onclick = () => R && setShift(0, 0);
+$("#auto").onclick = () => { if (!R) return; const P = R.pages[page], tol = R.p.tol*MM, step = Math.max(Math.min(tol/2, 3), .5);
+  const s = estimateShift(sample(P.ex.A.segs, step), sample(P.ex.B.segs, step), tol, P.w, P.h); setShift(s[0], s[1]); toast("Recalage automatique appliqué."); };
+document.querySelectorAll("[data-n]").forEach(b => b.onclick = () => { if (R) { const [dx, dy] = b.dataset.n.split(",").map(Number); nudge(dx, dy); } });
+window.addEventListener("keydown", e => { if (!R || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  const m = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key]; if (m) { e.preventDefault(); const st = e.shiftKey ? 10 : 1; nudge(m[0]*st, m[1]*st); } });
+
+/* souris */
 function bind(vp) {
+  const world = e => { const r = vp.getBoundingClientRect(); return [(e.clientX - r.left - view.x)/view.k, (e.clientY - r.top - view.y)/view.k]; };
   vp.addEventListener("wheel", e => { e.preventDefault(); const r = vp.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     const nk = Math.min(80, Math.max(.02, view.k * Math.exp(-e.deltaY * .0015))), q = nk / view.k; view.x = mx - (mx-view.x)*q; view.y = my - (my-view.y)*q; view.k = nk; draw(); }, { passive: false });
-  vp.addEventListener("pointerdown", e => { if (e.target.id === "handle") return; vp.setPointerCapture(e.pointerId); vp.classList.add("drag"); let lx = e.clientX, ly = e.clientY;
-    vp.onpointermove = ev => { view.x += ev.clientX-lx; view.y += ev.clientY-ly; lx = ev.clientX; ly = ev.clientY; draw(); }; });
-  vp.addEventListener("pointerup", () => { vp.onpointermove = null; vp.classList.remove("drag"); });
+  vp.addEventListener("pointerdown", e => {
+    if (e.target.id === "handle" || !R) return; const P = R.pages[page]; vp.setPointerCapture(e.pointerId); let lx = e.clientX, ly = e.clientY;
+    if (tool === "text") { pendingText = world(e); $("#tm").style.display = "flex"; $("#tmi").value = ""; setTimeout(() => $("#tmi").focus(), 30); return; }
+    if (tool === "cloud" || tool === "arrow") { const [x, y] = world(e); P.cur = { type: tool, x1: x, y1: y, x2: x, y2: y }; }
+    if (tool === "pan") vp.classList.add("drag");
+    vp.onpointermove = ev => {
+      if (tool === "pan") { view.x += ev.clientX-lx; view.y += ev.clientY-ly; draw(); }
+      else if (tool === "align") { setShift(P.shift[0] - (ev.clientX-lx)/view.k, P.shift[1] - (ev.clientY-ly)/view.k); }
+      else if (P.cur) { const [x, y] = world(ev); P.cur.x2 = x; P.cur.y2 = y; draw(); }
+      lx = ev.clientX; ly = ev.clientY; };
+  });
+  vp.addEventListener("pointerup", () => { vp.onpointermove = null; vp.classList.remove("drag"); if (R) { const P = R.pages[page]; if (P.cur) { P.ann.push(P.cur); P.cur = null; draw(); } } });
 }
+$("#tmok").onclick = () => { const v = $("#tmi").value.trim(); if (v && pendingText) { R.pages[page].ann.push({ type: "text", x1: pendingText[0], y1: pendingText[1], text: v }); draw(); } $("#tm").style.display = "none"; };
+$("#tmno").onclick = () => $("#tm").style.display = "none";
+$("#tmi").onkeydown = e => { if (e.key === "Enter") $("#tmok").click(); if (e.key === "Escape") $("#tmno").click(); };
+$("#undo").onclick = () => { if (R) { R.pages[page].ann.pop(); draw(); } };
+$("#clear").onclick = () => { if (R) { R.pages[page].ann = []; draw(); } };
+
 function zoomTo(z) { const vp = cvs[0].vp, [x0, y0, x1, y1] = z.bbox, p = 40, w = x1-x0+2*p, h = y1-y0+2*p;
   view.k = Math.min(vp.clientWidth/w, vp.clientHeight/h, 12); view.x = vp.clientWidth/2 - (x0+x1)/2*view.k; view.y = vp.clientHeight/2 - (y0+y1)/2*view.k; draw(); }
 const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const inZone = (t, z, sh) => { const b = t.a || (t.b && [t.b[0]-sh[0], t.b[1]-sh[1], t.b[2]-sh[0], t.b[3]-sh[1]]); return b && b[0] >= z.bbox[0]-20 && b[2] <= z.bbox[2]+20 && b[1] >= z.bbox[1]-20 && b[3] <= z.bbox[3]+20; };
 function renderList() {
   const P = R.pages[page], L = $("#list"); L.innerHTML = "";
-  const nr = P.removed.length/4, na = P.added.length/4;
-  $("#sum").textContent = `Page ${P.page} : ${P.zones.length} zone(s) — −${nr} / +${na} traits, ${P.texts.length} texte(s)`;
+  $("#sum").textContent = `Page ${P.page} : ${P.zones.length} zone(s) — −${P.removed.length/4} / +${P.added.length/4} traits, ${P.texts.length} texte(s)`;
   const add = html => { const d = document.createElement("div"); d.className = "z"; d.innerHTML = html; L.append(d); return d; };
   if (R.nA !== R.nB) add(`⚠ Nombre de pages différent (A : ${R.nA}, B : ${R.nB}). Seules les pages communes sont comparées.`);
-  if (P.shift[0] || P.shift[1]) add(`Recalage appliqué : ${(P.shift[0]/MM).toFixed(2)} mm, ${(P.shift[1]/MM).toFixed(2)} mm`);
   if (P.identical) add("Aucune différence à cette tolérance.");
   P.zones.forEach(z => {
     const tx = P.texts.filter(t => inZone(t, z, P.shift));
@@ -296,9 +386,19 @@ function renderList() {
 }
 window.addEventListener("resize", () => R && draw());
 
-/* ------------------------------------------------------------------ exports */
+/* exports */
 const download = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
 const KIND = { modified: "Texte modifié", added: "Texte ajouté", removed: "Texte supprimé" };
+async function exportCanvas(P, maxSc) {
+  const sc = Math.min(maxSc, 8000 / Math.max(P.w, P.h)), rr = { sc, a: await renderRaster(docA, P.page, sc), b: await renderRaster(docB, P.page, sc), ov: null, ovKey: "" };
+  const c = document.createElement("canvas"); c.width = Math.ceil(P.w*sc); c.height = Math.ceil(P.h*sc); const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.scale(sc, sc); drawLayer(ctx, P, "ov", sc, rr, null, { vec: $("#vec").checked });
+  ctx.lineWidth = 1.5/sc; ctx.strokeStyle = ctx.fillStyle = "#2563eb";
+  P.zones.forEach(z => { const [x0, y0, x1, y1] = z.bbox; ctx.setLineDash([6, 4]); ctx.strokeRect(x0-8, y0-8, x1-x0+16, y1-y0+16); ctx.setLineDash([]); ctx.font = `bold ${Math.max(16, 16/sc)}px sans-serif`; ctx.fillText(String(z.id), x0-8, Math.max(14, y0-12)); });
+  return c;
+}
+$("#xpng").onclick = async () => { $("#xpng").disabled = true; toast("Génération de l'image…"); const c = await exportCanvas(R.pages[page], +$("#res").value || 2);
+  c.toBlob(b => { download(b, `Comparaison_p${R.pages[page].page}.png`); $("#xpng").disabled = false; toast("Image exportée."); }, "image/png"); };
 $("#xcsv").onclick = () => {
   const q = v => `"${String(v).replace(/"/g, '""')}"`, rows = [["Page", "Zone", "Traits supprimés", "Traits ajoutés", "Textes", "x0 (pt)", "y0 (pt)", "x1 (pt)", "y1 (pt)"]];
   R.pages.forEach(P => P.zones.forEach(z => rows.push([P.page, z.id, z.removed, z.added, z.text, ...z.bbox.map(v => v.toFixed(1))])));
@@ -307,20 +407,13 @@ $("#xcsv").onclick = () => {
   download(new Blob(["﻿" + rows.map(r => r.map(q).join(";")).join("\n")], { type: "text/csv" }), "differences.csv");
 };
 $("#xpdf").onclick = async () => {
-  $("#xpdf").disabled = true; const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "pt", format: [595, 842] });
+  $("#xpdf").disabled = true; toast("Génération du PDF…"); const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "pt", format: [595, 842] });
   let y = 50; const ln = (t, b) => { if (y > 800) { doc.addPage([595, 842], "p"); y = 50; } doc.setFont("helvetica", b ? "bold" : "normal").setFontSize(b ? 10 : 8.5); doc.text(String(t).slice(0, 110), 40, y); y += 12; };
   doc.setFont("helvetica", "bold").setFontSize(18); doc.text("Comparaison de plans", 40, y); y += 22;
-  ln("A (ancien) : " + names[0]); ln("B (nouveau) : " + names[1]); ln(`Tolérance : ${R.p.tol} mm — regroupement : ${R.p.cluster} mm — recalage : ${R.p.align ? "oui" : "non"}`); ln("Rouge : présent dans A, absent de B.   Vert : ajouté dans B."); y += 10;
-  R.pages.forEach(P => { ln(`Page ${P.page} — ${P.zones.length} zone(s), ${P.removed.length/4} traits supprimés, ${P.added.length/4} ajoutés, ${P.texts.length} texte(s)`, true);
+  ln("A (ancien) : " + names[0]); ln("B (nouveau) : " + names[1]); ln(`Tolérance : ${R.p.tol} mm — regroupement : ${R.p.cluster} mm`); ln("Rouge : présent dans A seulement.   Bleu : présent dans B seulement.   Noir : identique."); y += 10;
+  R.pages.forEach(P => { ln(`Page ${P.page} — ${P.zones.length} zone(s), ${P.removed.length/4} traits supprimés, ${P.added.length/4} ajoutés, ${P.texts.length} texte(s), recalage B : ${(-P.shift[0]/MM).toFixed(2)} / ${(-P.shift[1]/MM).toFixed(2)} mm`, true);
     P.zones.forEach(z => ln(`   Zone ${z.id} : -${z.removed} / +${z.added} traits, ${z.text} texte(s)   @ (${z.bbox[0].toFixed(0)}, ${z.bbox[1].toFixed(0)}) pt`));
     P.texts.forEach(t => ln(`   ${t.kind === "modified" ? `« ${t.old} » -> « ${t.nw} »` : t.kind === "added" ? `Ajouté : « ${t.nw} »` : `Supprimé : « ${t.old} »`}`)); y += 6; });
-  for (const P of R.pages) {
-    const sc = Math.min(1.5, 8000 / Math.max(P.w, P.h)), rr = { sc, a: await renderRaster(docA, P.page, sc) };
-    const c = document.createElement("canvas"); c.width = Math.ceil(P.w*sc); c.height = Math.ceil(P.h*sc); const ctx = c.getContext("2d");
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); ctx.scale(sc, sc); drawLayer(ctx, P, "ov", sc, rr, null);
-    ctx.lineWidth = 1.5/sc; ctx.strokeStyle = "#2563eb"; ctx.fillStyle = "#2563eb"; ctx.font = `bold ${14/sc*sc}px sans-serif`;
-    P.zones.forEach(z => { const [x0, y0, x1, y1] = z.bbox; ctx.setLineDash([6, 4]); ctx.strokeRect(x0-8, y0-8, x1-x0+16, y1-y0+16); ctx.setLineDash([]); ctx.font = "bold 16px sans-serif"; ctx.fillText(String(z.id), x0-8, Math.max(14, y0-12)); });
-    doc.addPage([P.w, P.h], P.w > P.h ? "l" : "p"); doc.addImage(c.toDataURL("image/jpeg", .88), "JPEG", 0, 0, P.w, P.h);
-  }
+  for (const P of R.pages) { const c = await exportCanvas(P, 1.5); doc.addPage([P.w, P.h], P.w > P.h ? "l" : "p"); doc.addImage(c.toDataURL("image/jpeg", .88), "JPEG", 0, 0, P.w, P.h); }
   doc.save("comparaison.pdf"); $("#xpdf").disabled = false;
 };

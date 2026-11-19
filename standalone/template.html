@@ -2,7 +2,7 @@
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Comparateur de plans PDF</title>
 <style>
-:root{--bg:#f4f5f7;--panel:#fff;--bd:#d9dce1;--tx:#1f2430;--mut:#6b7280;--red:#e5192b;--green:#16a34a;--blue:#2563eb}
+:root{--bg:#f4f5f7;--panel:#fff;--bd:#d9dce1;--tx:#1f2430;--mut:#6b7280;--red:#e5192b;--green:#0284c7;--blue:#2563eb}
 *{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column}
 header{background:var(--panel);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 h1{font-size:16px;margin:0 8px 0 0}
@@ -27,6 +27,9 @@ aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(-
 .z b{color:var(--blue)}.r{color:var(--red)}.g{color:var(--green)}.t{font-size:12px;color:var(--mut);margin-top:3px;word-break:break-word}
 .legend{display:flex;gap:12px;font-size:12px;align-items:center}.sw{width:12px;height:12px;display:inline-block;border-radius:2px;vertical-align:-2px;margin-right:3px}
 #msg{padding:30px;color:var(--mut);background:#fff;flex:1}
+.sep{width:1px;height:22px;background:var(--bd)}.mono{font:12px monospace;color:var(--mut)}.nud button{padding:4px 8px}.mini{font-size:11px;color:var(--mut);display:flex;align-items:center;gap:4px}.mini input[type=range]{width:70px}#bar button.sec{padding:5px 9px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;padding:9px 16px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:60}
+#tm{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center}#tm div{background:#fff;padding:16px;border-radius:12px;display:flex;gap:8px;min-width:340px}#tm input{flex:1;padding:6px}
 </style></head><body>
 <header>
  <h1>Comparateur de plans PDF</h1>
@@ -42,19 +45,37 @@ aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(-
  <div id="stage">
   <div id="bar">
    <button class="sec on" data-m="overlay">Superposition</button>
+   <button class="sec" data-m="slider">Rideau</button>
+   <button class="sec" data-m="blink">Clignotement</button>
    <button class="sec" data-m="side">Côte à côte</button>
-   <button class="sec" data-m="slider">Curseur</button>
-   <span style="width:10px"></span>
+   <span class="sep"></span>
+   <button class="sec on" data-t="pan">✋ Navigation</button>
+   <button class="sec" data-t="align">⌖ Recalage B</button>
+   <button class="sec" data-t="cloud">☁ Nuage</button>
+   <button class="sec" data-t="arrow">↗ Flèche</button>
+   <button class="sec" data-t="text">T Texte</button>
+   <button class="sec" id="undo">↶</button><button class="sec" id="clear">Effacer</button>
+   <span class="sep"></span>
+   <span id="off" class="mono">ΔX 0 mm · ΔY 0 mm</span>
+   <span class="nud"><button class="sec" data-n="-1,0">←</button><button class="sec" data-n="0,-1">↑</button><button class="sec" data-n="0,1">↓</button><button class="sec" data-n="1,0">→</button></span>
+   <button class="sec" id="auto">Auto</button><button class="sec" id="reset">Réinit.</button>
+   <span class="sep"></span>
+   <label class="mini">Contraste <input type="range" id="sens" min="10" max="100" value="40"></label>
+   <label class="mini">Clignot. <input type="range" id="bspeed" min="150" max="1500" step="50" value="600"></label>
+   <label class="mini"><input type="checkbox" id="vec" checked> Écarts vectoriels</label>
+   <select id="res" title="Résolution du rendu"><option value="1.5">Standard</option><option value="2" selected>Haute déf.</option><option value="3">Ultra HD</option></select>
+   <span class="sep"></span>
    <select id="pg"></select>
    <button class="sec" id="fit">Ajuster</button>
-   <span class="legend"><span><i class="sw" style="background:var(--red)"></i>Supprimé (A)</span><span><i class="sw" style="background:var(--green)"></i>Ajouté (B)</span></span>
+   <span class="legend"><span><i class="sw" style="background:var(--red)"></i>Ancien (A)</span><span><i class="sw" style="background:var(--green)"></i>Nouveau (B)</span><span><i class="sw" style="background:#222"></i>Identique</span></span>
    <span style="flex:1"></span>
-   <button class="sec" id="xpdf" disabled>Export PDF</button><button class="sec" id="xcsv" disabled>Export CSV</button>
+   <button class="sec" id="xpng" disabled>Export PNG</button><button class="sec" id="xpdf" disabled>Export PDF</button><button class="sec" id="xcsv" disabled>Export CSV</button>
   </div>
   <div id="views"><div id="msg">Choisissez deux PDF puis cliquez sur « Comparer ». Tout reste sur votre ordinateur : aucun fichier n'est envoyé.</div></div>
  </div>
  <aside><h2 id="sum">Différences</h2><div id="list"></div></aside>
 </main>
+<div id="toast"></div><div id="tm"><div><input id="tmi" placeholder="Ex : profondeur canalisation modifiée…"><button id="tmok">Ajouter</button><button class="sec" id="tmno">Annuler</button></div></div>
 <script>/*@PDFJS@*/</script>
 <script>/*@JSPDF@*/</script>
 <script id="pdfworker" type="text/plain">/*@WORKER@*/</script>
