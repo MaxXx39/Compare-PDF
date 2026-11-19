@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: compare-pdf
+    runtime: docker
+    plan: starter        # 512 Mo mini ; le plan gratuit est trop juste pour de grands plans
+    envVars:
+      - key: APP_PASSWORD
+        sync: false      # à saisir dans le tableau de bord Render

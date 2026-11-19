@@ -1,11 +1,11 @@
 """Application web locale de comparaison de plans PDF.  Lancer : python run.py"""
 from __future__ import annotations
-import json, shutil, uuid
+import base64, hmac, json, os, shutil, uuid
 from pathlib import Path
 from dataclasses import asdict
 
 import pymupdf
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Request, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -19,6 +19,21 @@ WORK.mkdir(exist_ok=True)
 MAX_SESSIONS = 20
 
 app = FastAPI(title="Compare-PDF")
+PASSWORD = os.environ.get("APP_PASSWORD", "")   # si défini : accès protégé (identifiant libre)
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    if PASSWORD:
+        try:
+            given = base64.b64decode(request.headers.get("authorization", "")[6:]).decode().split(":", 1)[1]
+        except Exception:
+            given = ""
+        if not hmac.compare_digest(given, PASSWORD):
+            return Response("Authentification requise", 401, headers={"WWW-Authenticate": 'Basic realm="Compare-PDF"'})
+    return await call_next(request)
+
+
 _cache: dict[str, dict] = {}     # id -> {"diffs": {...}, "result": {...}}
 
 
