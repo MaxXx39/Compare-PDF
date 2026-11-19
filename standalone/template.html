@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comparateur de plans PDF</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--bd:#d9dce1;--tx:#1f2430;--mut:#6b7280;--red:#e5192b;--green:#16a34a;--blue:#2563eb}
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column}
+header{background:var(--panel);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{font-size:16px;margin:0 8px 0 0}
+label.f{display:flex;flex-direction:column;font-size:11px;color:var(--mut);gap:2px}
+input[type=number]{width:70px}input[type=file]{max-width:200px}
+button{background:var(--blue);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
+button.sec{background:#fff;color:var(--tx);border:1px solid var(--bd)}button.on{background:var(--tx);color:#fff}
+button:disabled{opacity:.5;cursor:wait}
+main{flex:1;display:flex;min-height:0}
+#stage{flex:1;display:flex;flex-direction:column;min-width:0}
+#bar{padding:6px 10px;display:flex;gap:8px;align-items:center;background:var(--panel);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+#views{flex:1;display:flex;gap:2px;min-height:0;background:#888}
+.vp{flex:1;position:relative;overflow:hidden;background:#fff;cursor:grab;min-width:0}.vp.drag{cursor:grabbing}
+.vp canvas{position:absolute;left:0;top:0}
+#handle{position:absolute;top:0;bottom:0;width:4px;background:var(--blue);cursor:ew-resize;z-index:5;display:none}
+#handle::after{content:"⇆";position:absolute;top:50%;left:-10px;width:24px;height:24px;margin-top:-12px;background:var(--blue);color:#fff;border-radius:50%;text-align:center;line-height:24px}
+.tag{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.65);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;z-index:4}
+aside{width:340px;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column}
+aside h2{font-size:13px;margin:0;padding:10px 12px;border-bottom:1px solid var(--bd)}
+#list{overflow:auto;flex:1}
+.z{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer}.z:hover,.z.sel{background:#eef3ff}
+.z b{color:var(--blue)}.r{color:var(--red)}.g{color:var(--green)}.t{font-size:12px;color:var(--mut);margin-top:3px;word-break:break-word}
+.legend{display:flex;gap:12px;font-size:12px;align-items:center}.sw{width:12px;height:12px;display:inline-block;border-radius:2px;vertical-align:-2px;margin-right:3px}
+#msg{padding:30px;color:var(--mut);background:#fff;flex:1}
+</style></head><body>
+<header>
+ <h1>Comparateur de plans PDF</h1>
+ <label class="f">A — ancien<input type="file" id="fa" accept="application/pdf"></label>
+ <label class="f">B — nouveau<input type="file" id="fb" accept="application/pdf"></label>
+ <label class="f">Tolérance (mm)<input type="number" id="tol" value="2" min="0.1" step="0.1"></label>
+ <label class="f">Regroupement (mm)<input type="number" id="clu" value="15" min="1" step="1"></label>
+ <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="al"> Recalage auto</label>
+ <label class="f" style="flex-direction:row;align-items:center;gap:4px"><input type="checkbox" id="ct" checked> Comparer les textes</label>
+ <button id="go">Comparer</button>
+</header>
+<main>
+ <div id="stage">
+  <div id="bar">
+   <button class="sec on" data-m="overlay">Superposition</button>
+   <button class="sec" data-m="side">Côte à côte</button>
+   <button class="sec" data-m="slider">Curseur</button>
+   <span style="width:10px"></span>
+   <select id="pg"></select>
+   <button class="sec" id="fit">Ajuster</button>
+   <span class="legend"><span><i class="sw" style="background:var(--red)"></i>Supprimé (A)</span><span><i class="sw" style="background:var(--green)"></i>Ajouté (B)</span></span>
+   <span style="flex:1"></span>
+   <button class="sec" id="xpdf" disabled>Export PDF</button><button class="sec" id="xcsv" disabled>Export CSV</button>
+  </div>
+  <div id="views"><div id="msg">Choisissez deux PDF puis cliquez sur « Comparer ». Tout reste sur votre ordinateur : aucun fichier n'est envoyé.</div></div>
+ </div>
+ <aside><h2 id="sum">Différences</h2><div id="list"></div></aside>
+</main>
+<script>/*@PDFJS@*/</script>
+<script>/*@JSPDF@*/</script>
+<script id="pdfworker" type="text/plain">/*@WORKER@*/</script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([document.getElementById("pdfworker").textContent], { type: "text/javascript" }));
+</script>
+<script>/*@APP@*/</script>
+</body></html>

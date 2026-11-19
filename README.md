@@ -22,3 +22,7 @@ Exemples dans `samples/`. Multi-page : les pages sont comparées 1↔1.
 Un `Dockerfile` et un `render.yaml` sont fournis. Sur render.com : *New → Blueprint*, choisir ce dépôt,
 puis définir `APP_PASSWORD` (mot de passe d'accès ; le nom d'utilisateur est libre). Sans cette variable, l'accès est public.
 Prévoir ≥ 1 Go de RAM pour de grands plans.
+
+## Version « fichier unique » (sans installation)
+`dist/comparateur.html` : à télécharger puis double-cliquer, s'ouvre dans Chrome. Tout est calculé dans le navigateur
+(pdf.js + jsPDF embarqués, aucun envoi de fichier). Régénérer avec `standalone/build.py` (voir l'en-tête du script).
